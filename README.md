@@ -72,6 +72,7 @@ Follow these exact steps to add the layout to OBS Studio:
 ![alt text](image.png)
 
 Empty the custom css box.
+
 5. Click **OK** to save the source.
 6. The overlay will immediately load. It is designed to be fully transparent and perfectly match a 1920x1080 canvas. Do not resize the bounds manually.
 7. To interact with the Settings or cameras, right-click the Browser source in OBS and select **Interact**. A secondary window will appear allowing you to click the Settings gear icon and manage the AI.
