@@ -30,10 +30,24 @@ async function setupLLM() {
         console.log('Initializing Llama.cpp...');
         await localLLM.initializeLLM();
 
-        console.log('Loading Model (This may take a moment based on the GGUF size)...');
-        await loadModel();
+        const models = getAvailableModels ? getAvailableModels() : {};
+        let modelToLoad = null;
 
-        console.log('✅ Local LLM is completely ready! Send a message from the extension.');
+        // Check if the user already has ANY model downloaded locally
+        for (const [modelKey, modelInfo] of Object.entries(models)) {
+            if (modelInfo.downloaded) {
+                modelToLoad = modelKey;
+                break;
+            }
+        }
+
+        if (modelToLoad) {
+            console.log(`Found existing downloaded model. Auto-loading: ${modelToLoad}...`);
+            await loadModel(modelToLoad);
+            console.log('✅ Local LLM is completely ready! Send a message from the extension.');
+        } else {
+            console.log('⚠️ No AI models downloaded yet. Please download one from the Local AI Settings tab.');
+        }
     } catch (e) {
         console.error('❌ Failed to initialize Local LLM:', e);
     }
