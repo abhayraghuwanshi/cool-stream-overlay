@@ -1,15 +1,70 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import React from 'react';
+import { useEffect, useState } from 'react';
 import { useOBS } from '../context/OBSContext';
+import AICompanion from './AICompanion';
 import CurrentTask from './CurrentTask';
+import SettingsModal from './SettingsModal';
 import SocialFeed from './SocialFeed';
 
 const OverlayLayout = () => {
     const { isRecording, isConnected } = useOBS();
-    const [showFaceCam, setShowFaceCam] = React.useState(true);
-    const [showHandCam, setShowHandCam] = React.useState(true);
-    const [showRoomCam, setShowRoomCam] = React.useState(true);
-    const [showSettings, setShowSettings] = React.useState(false);
+    const [layoutSettings, setLayoutSettings] = useState({
+        showFaceCam: true,
+        showHandCam: true,
+        showRoomCam: true
+    });
+    const [showSettings, setShowSettings] = useState(false);
+
+    useEffect(() => {
+        // Fetch initial layout settings from Local Node Backend
+        fetch('http://127.0.0.1:8080/layout')
+            .then(res => res.json())
+            .then(data => setLayoutSettings(s => ({ ...s, ...data })))
+            .catch(console.error);
+
+        // Listen for live layout updates via WebSocket
+        let ws;
+        let reconnectTimeout;
+        let isMounted = true;
+
+        const connectWs = () => {
+            if (!isMounted) return;
+            ws = new WebSocket('ws://localhost:8080');
+            ws.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    if (data.type === 'layout-update') {
+                        setLayoutSettings(s => ({ ...s, ...data.payload }));
+                    }
+                } catch (e) { }
+            };
+            ws.onclose = () => {
+                if (!isMounted) return;
+                reconnectTimeout = setTimeout(connectWs, 3000);
+            };
+        };
+        connectWs();
+
+        return () => {
+            isMounted = false;
+            clearTimeout(reconnectTimeout);
+            if (ws) {
+                ws.onclose = null;
+                ws.close();
+            }
+        };
+    }, []);
+
+    const updateLayout = (updates) => {
+        setLayoutSettings(s => ({ ...s, ...updates }));
+        fetch('http://127.0.0.1:8080/layout', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(updates)
+        }).catch(console.error);
+    };
+
+    const { showFaceCam, showHandCam, showRoomCam } = layoutSettings;
 
     return (
         // MAIN CONTAINER: w-screen h-screen ensures it fills ANY resolution
@@ -35,20 +90,15 @@ const OverlayLayout = () => {
                     <SettingsComponents />
                 </button>
 
-                {/* Settings Menu */}
+                {/* Settings Modal */}
                 <AnimatePresence>
                     {showSettings && (
-                        <motion.div
-                            initial={{ opacity: 0, scale: 0.9, y: -10 }}
-                            animate={{ opacity: 1, scale: 1, y: 0 }}
-                            exit={{ opacity: 0, scale: 0.9, y: -10 }}
-                            className="absolute top-10 right-0 w-48 bg-black/90 backdrop-blur-xl border border-white/10 rounded-xl p-2 shadow-2xl flex flex-col gap-1"
-                        >
-                            <div className="text-[10px] uppercase font-bold text-white/30 px-2 py-1">Visibility</div>
-                            <ToggleItem label="Face Cam" active={showFaceCam} onClick={() => setShowFaceCam(!showFaceCam)} />
-                            <ToggleItem label="Hand Cam" active={showHandCam} onClick={() => setShowHandCam(!showHandCam)} />
-                            <ToggleItem label="Room Cam" active={showRoomCam} onClick={() => setShowRoomCam(!showRoomCam)} />
-                        </motion.div>
+                        <SettingsModal
+                            onClose={() => setShowSettings(false)}
+                            showFaceCam={showFaceCam} setShowFaceCam={(v) => updateLayout({ showFaceCam: v })}
+                            showHandCam={showHandCam} setShowHandCam={(v) => updateLayout({ showHandCam: v })}
+                            showRoomCam={showRoomCam} setShowRoomCam={(v) => updateLayout({ showRoomCam: v })}
+                        />
                     )}
                 </AnimatePresence>
 
@@ -75,14 +125,14 @@ const OverlayLayout = () => {
 
                 {/* 2. Bottom Bar: Current Task Widget */}
                 {/* Fixed height (160px) fills the bottom gap */}
-                <div className="h-40 w-full flex-shrink-0 border-t border-white/5 bg-black/80 backdrop-blur-md relative z-20">
+                <div className="h-44 w-full flex-shrink-0 border-t border-white/5 bg-black/80 backdrop-blur-md relative z-20">
                     <CurrentTask />
                 </div>
             </div>
 
 
             {/* --- RIGHT COLUMN: SIDEBAR (Fixed Width) --- */}
-            <div className="w-80 h-full flex flex-col gap-0 flex-shrink-0 relative z-10 border-l border-white/5 bg-black/40 backdrop-blur-sm transition-all duration-300">
+            <div className="w-96 h-full flex flex-col gap-0 flex-shrink-0 relative z-10 border-l border-white/5 bg-black/40 backdrop-blur-sm transition-all duration-300">
 
                 {/* 1. Face Cam (Toggleable) */}
                 <AnimatePresence>
@@ -102,9 +152,14 @@ const OverlayLayout = () => {
                     )}
                 </AnimatePresence>
 
-                {/* 2. Social Feed (Fills gap logic) */}
-                <div className="flex-1 min-h-0 p-3 flex flex-col justify-center">
+                {/* 2. Content Area (Social + AI) */}
+                <div className="flex-1 min-h-0 p-3 flex flex-col gap-3">
                     <SocialFeed />
+
+                    {/* The new AI Avatar Box */}
+                    <div className="flex-1 min-h-0">
+                        <AICompanion />
+                    </div>
                 </div>
 
                 {/* 3. Secondary Cams (Toggleable) */}

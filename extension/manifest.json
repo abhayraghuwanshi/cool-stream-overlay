@@ -1,0 +1,16 @@
+{
+    "manifest_version": 3,
+    "name": "Stream Overlay AI Sender",
+    "version": "1.0",
+    "description": "Send texts, links, or images directly to your OBS React Overlay.",
+    "permissions": [
+        "contextMenus"
+    ],
+    "background": {
+        "service_worker": "background.js"
+    },
+    "action": {
+        "default_popup": "popup.html",
+        "default_title": "Open AI Sender"
+    }
+}
