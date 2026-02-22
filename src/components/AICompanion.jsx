@@ -1,6 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bot, Image as ImageIcon, Link as LinkIcon, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { BACKEND_WS } from '../config.js';
 
 const AICompanion = () => {
     const [messages, setMessages] = useState([]);
@@ -14,7 +15,7 @@ const AICompanion = () => {
         const connectWs = () => {
             if (!isMounted) return;
 
-            ws = new WebSocket('ws://localhost:8080');
+            ws = new WebSocket(BACKEND_WS);
 
             ws.onopen = () => {
                 console.log('Connected to AI Companion WebSocket');

@@ -64,7 +64,7 @@ Follow these exact steps to add the layout to OBS Studio:
 2. Click the **+** (Add) button and select **Browser**.
 3. Name the source something descriptive, like "AI Stream Overlay", and click **OK**.
 4. In the Properties window that appears:
-   - **URL**: Set this to `http://localhost:5173`.
+   - **URL**: Set this to `http://localhost:3377`.
    - **Width**: Set this to `1920`.
    - **Height**: Set this to `1080`.
    - **Use custom frame rate**: Check this box.

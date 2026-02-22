@@ -1,6 +1,12 @@
 import fs from 'fs';
 import http from 'http';
+import { dirname, join } from 'path';
+import { fileURLToPath } from 'url';
 import { WebSocketServer } from 'ws';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+const { PORTS } = await import(`file://${join(__dirname, '..', 'ports.config.js').replace(/\\/g, '/')}`);
 
 let chat, loadModel, getStatus, getAvailableModels, downloadModel, unloadModel, onProgress;
 // Import your existing Local LLM script natively from the local file!
@@ -246,6 +252,6 @@ function broadcast(msgStr) {
     });
 }
 
-server.listen(8080, () => {
-    console.log('WebSocket & HTTP Server running on http://localhost:8080');
+server.listen(PORTS.BACKEND, () => {
+    console.log(`WebSocket & HTTP Server running on http://localhost:${PORTS.BACKEND}`);
 });

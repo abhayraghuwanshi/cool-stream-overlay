@@ -1,3 +1,6 @@
+// ⚙️ Backend WebSocket URL — change the port here if you changed it in ports.config.js
+const BACKEND_WS = 'ws://127.0.0.1:3388';
+
 document.getElementById('sendBtn').addEventListener('click', () => {
     const text = document.getElementById('msgInput').value;
     if (!text.trim()) return;
@@ -5,7 +8,7 @@ document.getElementById('sendBtn').addEventListener('click', () => {
     const statusDiv = document.getElementById('status');
     statusDiv.textContent = 'Sending...';
 
-    const ws = new WebSocket('ws://localhost:8080');
+    const ws = new WebSocket(BACKEND_WS);
 
     ws.onopen = () => {
         ws.send(JSON.stringify({ type: 'text', payload: text }));

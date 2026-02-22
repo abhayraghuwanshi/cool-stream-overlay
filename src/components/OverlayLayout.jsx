@@ -1,5 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { useEffect, useState } from 'react';
+import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
 import { useOBS } from '../context/OBSContext';
 import AICompanion from './AICompanion';
 import CurrentTask from './CurrentTask';
@@ -21,7 +22,7 @@ const OverlayLayout = () => {
 
     useEffect(() => {
         // Fetch initial layout settings from Local Node Backend
-        fetch('http://127.0.0.1:8080/layout')
+        fetch(`${BACKEND_HTTP}/layout`)
             .then(res => res.json())
             .then(data => setLayoutSettings(s => ({ ...s, ...data })))
             .catch(console.error);
@@ -33,7 +34,7 @@ const OverlayLayout = () => {
 
         const connectWs = () => {
             if (!isMounted) return;
-            ws = new WebSocket('ws://localhost:8080');
+            ws = new WebSocket(BACKEND_WS);
             ws.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
@@ -61,7 +62,7 @@ const OverlayLayout = () => {
 
     const updateLayout = (updates) => {
         setLayoutSettings(s => ({ ...s, ...updates }));
-        fetch('http://127.0.0.1:8080/layout', {
+        fetch(`${BACKEND_HTTP}/layout`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(updates)

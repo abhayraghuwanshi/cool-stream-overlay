@@ -1,8 +1,9 @@
 import { motion } from 'framer-motion';
 import { Camera, Cloud, Cpu, Download, Loader2, Rocket, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
 
-const SIDECAR_URL = 'http://127.0.0.1:8080';
+const SIDECAR_URL = BACKEND_HTTP;
 
 async function sidecarGet(path) {
     const res = await fetch(`${SIDECAR_URL}${path}`);
@@ -257,7 +258,7 @@ function LocalAITab() {
                     loadStatus();
                     loadModels();
 
-                    ws = new WebSocket(`ws://127.0.0.1:8080`);
+                    ws = new WebSocket(BACKEND_WS);
                     ws.onopen = () => {
                         ws.send(JSON.stringify({ type: 'system', client: 'localAITab', payload: 'status-check' }));
                     };
