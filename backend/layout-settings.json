@@ -1,7 +1,14 @@
 {
   "showFaceCam": true,
-  "showHandCam": false,
-  "showRoomCam": false,
+  "showHandCam": true,
+  "showRoomCam": true,
+  "tasks": [
+    {
+      "id": 1774896219553,
+      "text": "Testing out new tools for auto applying for jobs",
+      "status": "pending"
+    }
+  ],
   "socialGithub": "/abhayraghuwanshi",
   "socialTwitter": "@ab_nhi_haiii",
   "socialLinkedin": "in/abhay-raghuwanshi-2a6804173/",

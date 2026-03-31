@@ -1,29 +1,23 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Activity, CheckCircle2, Terminal, X } from 'lucide-react';
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 
-const CurrentTask = () => {
-    // State for tasks and input
-    const [tasks, setTasks] = useState([
-        { id: 1, text: "Refactoring Overlay", status: "active" }
-    ]);
+const CurrentTask = ({ tasks = [], onTasksChange }) => {
     const [newItem, setNewItem] = useState("");
-    const [isEditing, setIsEditing] = useState(false);
-    const inputRef = useRef(null);
 
     const handleAddTask = (e) => {
         if (e.key === 'Enter' && newItem.trim()) {
-            setTasks([...tasks, { id: Date.now(), text: newItem, status: 'pending' }]);
+            onTasksChange([...tasks, { id: Date.now(), text: newItem, status: 'pending' }]);
             setNewItem("");
         }
     };
 
     const removeTask = (id) => {
-        setTasks(tasks.filter(t => t.id !== id));
+        onTasksChange(tasks.filter(t => t.id !== id));
     };
 
     const toggleStatus = (id) => {
-        setTasks(tasks.map(t =>
+        onTasksChange(tasks.map(t =>
             t.id === id ? { ...t, status: t.status === 'active' ? 'pending' : 'active' } : t
         ));
     };

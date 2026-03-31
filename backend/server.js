@@ -66,7 +66,8 @@ const layoutSettingsFile = './layout-settings.json';
 let layoutSettings = {
     showFaceCam: true,
     showHandCam: true,
-    showRoomCam: true
+    showRoomCam: true,
+    tasks: [{ id: 1, text: "Refactoring Overlay", status: "active" }]
 };
 
 try {
