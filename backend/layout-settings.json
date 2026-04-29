@@ -12,5 +12,121 @@
   "socialGithub": "/abhayraghuwanshi",
   "socialTwitter": "@ab_nhi_haiii",
   "socialLinkedin": "in/abhay-raghuwanshi-2a6804173/",
-  "useGPU": true
+  "useGPU": true,
+  "boxes": {
+    "faceCam": {
+      "x": 67.2351933817139,
+      "y": 22.334004024144868,
+      "w": 20,
+      "h": 20
+    },
+    "socialFeed": {
+      "x": 14.090285041841005,
+      "y": 19.998113682092555,
+      "w": 20.10411218619247,
+      "h": 27.708438128772634
+    },
+    "aiCompanion": {
+      "x": 41.07553680981595,
+      "y": 24.020686619718308,
+      "w": 19.998904469763364,
+      "h": 29.252074949698187
+    },
+    "handCam": {
+      "x": 67.7092050209205,
+      "y": 58.501006036217305,
+      "w": 10,
+      "h": 10
+    },
+    "roomCam": {
+      "x": 79.17364016736401,
+      "y": 50.352112676056336,
+      "w": 10,
+      "h": 10
+    },
+    "currentTask": {
+      "x": 17.4163179916318,
+      "y": 59.34513329979879,
+      "w": 38.05406642259414,
+      "h": 26.266976861167002
+    },
+    "screenCapture": {
+      "x": 0,
+      "y": 29.57157784743992,
+      "w": 55.92692057291667,
+      "h": 54.42789968652038
+    },
+    "screen_0": {
+      "x": 55.89285255904862,
+      "y": 37.82696177062374,
+      "w": 42.96384675732218,
+      "h": 51.403734909456745
+    }
+  },
+  "boxVisibility": {
+    "faceCam": true,
+    "handCam": true,
+    "roomCam": true,
+    "socialFeed": true,
+    "aiCompanion": true,
+    "currentTask": true
+  },
+  "elements": [
+    {
+      "id": "el_1775052217434_jgkw",
+      "type": "clock",
+      "hidden": false,
+      "box": {
+        "x": 16.692988427501703,
+        "y": 2.3293084522502743,
+        "w": 24,
+        "h": 8
+      },
+      "opacity": 1,
+      "borderRadius": 0,
+      "bgColor": "#000000",
+      "bgOpacity": 0,
+      "content": "",
+      "subContent": "Role / Subtitle",
+      "fontSize": 28,
+      "subFontSize": 13,
+      "fontColor": "#ffffff",
+      "subFontColor": "#aaaaaa",
+      "bold": false,
+      "italic": false,
+      "align": "center",
+      "letterSpacing": 0,
+      "src": null,
+      "objectFit": "contain",
+      "imgPadding": 0
+    },
+    {
+      "id": "el_1775053399330_m142",
+      "type": "text",
+      "hidden": false,
+      "box": {
+        "x": 68.26294456066945,
+        "y": 82.76848591549296,
+        "w": 29.999673117154813,
+        "h": 10.099660462776662
+      },
+      "opacity": 1,
+      "borderRadius": 0,
+      "bgColor": "#000000",
+      "bgOpacity": 0,
+      "content": "Hello Wassup",
+      "subContent": "Role / Subtitle",
+      "fontSize": 36,
+      "subFontSize": 13,
+      "fontColor": "#ffffff",
+      "subFontColor": "#aaaaaa",
+      "bold": true,
+      "italic": false,
+      "align": "center",
+      "letterSpacing": 0,
+      "src": null,
+      "objectFit": "contain",
+      "imgPadding": 0
+    }
+  ]
 }

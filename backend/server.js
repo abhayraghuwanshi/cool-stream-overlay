@@ -169,10 +169,13 @@ const server = http.createServer((req, res) => {
 
             if (req.url === '/layout') {
                 try {
-                    layoutSettings = { ...layoutSettings, ...data };
+                    // Strip internal routing field before persisting
+                    const { _clientId, ...updateData } = data;
+                    layoutSettings = { ...layoutSettings, ...updateData };
                     saveLayoutSettings();
-                    // Let all connected OBS overlays see the change instantly
-                    broadcast(JSON.stringify({ type: 'layout-update', payload: layoutSettings }));
+                    // Let all connected OBS overlays see the change instantly.
+                    // Include _clientId so the sender can skip its own echo.
+                    broadcast(JSON.stringify({ type: 'layout-update', payload: layoutSettings, _clientId }));
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
                 } catch (e) {

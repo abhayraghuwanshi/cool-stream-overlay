@@ -1,54 +1,58 @@
 import OBSWebSocket from 'obs-websocket-js';
-import { createContext, useContext, useEffect, useState } from 'react';
+import { createContext, useContext, useEffect, useRef, useState } from 'react';
 
 const OBSContext = createContext(null);
 
 export const useOBS = () => useContext(OBSContext);
 
+const RETRY_INTERVAL = 5000; // ms between reconnect attempts
+
 export const OBSProvider = ({ children }) => {
-    const [obs] = useState(new OBSWebSocket());
+    const [obs] = useState(() => new OBSWebSocket());
     const [isConnected, setIsConnected] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
-    const [error, setError] = useState(null);
+    const retryRef = useRef(null);
+    const mountedRef = useRef(true);
 
     useEffect(() => {
-        const connectOBS = async () => {
+        const connect = async () => {
             try {
-                // Defaults: localhost:4455, no password (or empty)
-                // You might need to change this if your OBS has a password
                 await obs.connect('ws://localhost:4455', '');
+                if (!mountedRef.current) return;
                 setIsConnected(true);
-                console.log('Connected to OBS');
 
-                // Check initial recording state
                 const status = await obs.call('GetRecordStatus');
-                setIsRecording(status.outputActive);
-            } catch (err) {
-                console.error('Failed to connect to OBS:', err);
-                setError(err);
+                if (mountedRef.current) setIsRecording(status.outputActive);
+            } catch {
+                // OBS is likely not open — retry silently
+                if (!mountedRef.current) return;
                 setIsConnected(false);
+                retryRef.current = setTimeout(connect, RETRY_INTERVAL);
             }
         };
 
-        connectOBS();
-
-        // Event listeners
         obs.on('RecordStateChanged', (data) => {
             setIsRecording(data.outputActive);
         });
 
         obs.on('ConnectionClosed', () => {
+            if (!mountedRef.current) return;
             setIsConnected(false);
-            console.log('OBS Connection Closed');
+            setIsRecording(false);
+            retryRef.current = setTimeout(connect, RETRY_INTERVAL);
         });
 
+        connect();
+
         return () => {
+            mountedRef.current = false;
+            clearTimeout(retryRef.current);
             obs.disconnect();
         };
     }, [obs]);
 
     return (
-        <OBSContext.Provider value={{ obs, isConnected, isRecording, error }}>
+        <OBSContext.Provider value={{ obs, isConnected, isRecording }}>
             {children}
         </OBSContext.Provider>
     );

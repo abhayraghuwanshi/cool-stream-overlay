@@ -14,6 +14,7 @@ export const defaultElement = (type) => {
     const base = {
         id: `el_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
         type,
+        hidden: false,
         box: { x: 35, y: 38, w: 30, h: 10 },
         opacity: 1,
         borderRadius: 0,

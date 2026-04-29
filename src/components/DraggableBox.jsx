@@ -1,7 +1,8 @@
-import { useRef, useState } from 'react';
+import { memo, useRef, useState } from 'react';
 
 const MIN_W_PCT = 4;
 const MIN_H_PCT = 3;
+const DRAG_THRESHOLD = 5; // Minimum px of movement before a mousedown counts as a drag
 
 const RESIZE_HANDLES = [
     { id: 'n',  style: { top: 0,    left: '50%', transform: 'translateX(-50%)', cursor: 'n-resize', width: 40, height: 8  } },
@@ -16,11 +17,16 @@ const RESIZE_HANDLES = [
 
 const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
+// Module-level flag — shared across all DraggableBox instances.
+// While any box is being dragged or resized, suppress hover-state changes
+// so other boxes don't re-render as the mouse passes over them.
+let anyDragging = false;
+
 const DraggableBox = ({
     id, title, box, zIndex,
     onBoxChange, onSelect, onLayerUp, onLayerDown,
     editMode, selected,
-    canvasRef, children,
+    canvasRef, children, extraStyle,
 }) => {
     const elRef   = useRef(null);
     const boxRef  = useRef(box);
@@ -50,6 +56,8 @@ const DraggableBox = ({
         // Always reset here — stopPropagation means root onMouseDown won't run,
         // so this is the only place that resets it when the handle is clicked.
         didDrag.current = false;
+        anyDragging = true;
+        setHovered(false); // clear local hover so outline resets cleanly
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -63,23 +71,26 @@ const DraggableBox = ({
         const startTop    = (b.y / 100) * H;
 
         const onMove = (ev) => {
+            const dx = ev.clientX - startMouseX;
+            const dy = ev.clientY - startMouseY;
+            // Only start dragging after the mouse moves beyond the dead-zone
+            if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
-            el.style.left = `${clamp(startLeft + ev.clientX - startMouseX, 0, W - el.offsetWidth)}px`;
-            el.style.top  = `${clamp(startTop  + ev.clientY - startMouseY, 0, H - el.offsetHeight)}px`;
+            el.style.left = `${clamp(startLeft + dx, 0, W - el.offsetWidth)}px`;
+            el.style.top  = `${clamp(startTop  + dy, 0, H - el.offsetHeight)}px`;
         };
 
         const onUp = (ev) => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup',   onUp);
-            el.style.left = '';
-            el.style.top  = '';
+            anyDragging = false;
             if (didDrag.current) {
-                const newLeft = clamp(startLeft + ev.clientX - startMouseX, 0, W - el.offsetWidth);
-                const newTop  = clamp(startTop  + ev.clientY - startMouseY, 0, H - el.offsetHeight);
+                const dx = ev.clientX - startMouseX;
+                const dy = ev.clientY - startMouseY;
+                const newLeft = clamp(startLeft + dx, 0, W - el.offsetWidth);
+                const newTop  = clamp(startTop  + dy, 0, H - el.offsetHeight);
                 onBoxChange(id, { ...boxRef.current, x: (newLeft / W) * 100, y: (newTop / H) * 100 });
             }
-            // If !didDrag: it was a plain click → the bubbling click event reaches
-            // onRootClick which calls onSelect(id) for selection
         };
 
         window.addEventListener('mousemove', onMove);
@@ -91,7 +102,8 @@ const DraggableBox = ({
         e.preventDefault();
         e.stopPropagation();
 
-        didDrag.current = false; // same fix — stopPropagation blocks root onMouseDown
+        didDrag.current = false;
+        anyDragging = true;
 
         const canvas = canvasRef.current;
         if (!canvas) return;
@@ -109,9 +121,11 @@ const DraggableBox = ({
         const minH = (MIN_H_PCT / 100) * H;
 
         const onMove = (ev) => {
-            didDrag.current = true;
             const dx = ev.clientX - startMouseX;
             const dy = ev.clientY - startMouseY;
+            // Only start resizing after the mouse moves beyond the dead-zone
+            if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
+            didDrag.current = true;
             let nL = left, nT = top, nW = width, nH = height;
             if (dir.includes('e')) nW = Math.max(minW, width  + dx);
             if (dir.includes('s')) nH = Math.max(minH, height + dy);
@@ -126,10 +140,10 @@ const DraggableBox = ({
         const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup',   onUp);
-            const rect  = el.getBoundingClientRect();
-            const pRect = canvas.getBoundingClientRect();
-            el.style.left = el.style.top = el.style.width = el.style.height = '';
+            anyDragging = false;
             if (didDrag.current) {
+                const rect  = el.getBoundingClientRect();
+                const pRect = canvas.getBoundingClientRect();
                 onBoxChange(id, {
                     x: ((rect.left - pRect.left) / W) * 100,
                     y: ((rect.top  - pRect.top)  / H) * 100,
@@ -157,8 +171,8 @@ const DraggableBox = ({
             ref={elRef}
             onMouseDown={onRootMouseDown}
             onClick={onRootClick}
-            onMouseEnter={() => setHovered(true)}
-            onMouseLeave={() => setHovered(false)}
+            onMouseEnter={() => { if (!anyDragging) setHovered(true);  }}
+            onMouseLeave={() => { if (!anyDragging) setHovered(false); }}
             style={{
                 position: 'absolute',
                 left:     `${box.x}%`,
@@ -170,7 +184,8 @@ const DraggableBox = ({
                 outline:      `1px solid ${outlineColor}`,
                 borderRadius: 4,
                 zIndex,
-                transition:   'outline-color 0.12s',
+                transition:   'outline-color 0.12s, opacity 0.15s',
+                ...extraStyle,
             }}
         >
             {/* ── Drag handle (edit mode only) ── */}
@@ -273,4 +288,17 @@ const LayerBtn = ({ onClick, title, children }) => (
     </button>
 );
 
-export default DraggableBox;
+// Only re-render when the box position/size, selection, editMode, or children change.
+// Callbacks (onBoxChange, onSelect, etc.) must be stable (useCallback) in the parent.
+export default memo(DraggableBox, (prev, next) => {
+    const pb = prev.box, nb = next.box;
+    return (
+        pb.x === nb.x && pb.y === nb.y && pb.w === nb.w && pb.h === nb.h &&
+        prev.zIndex    === next.zIndex    &&
+        prev.selected  === next.selected  &&
+        prev.editMode  === next.editMode  &&
+        prev.children  === next.children  &&
+        // extraStyle: both undefined, or same opacity/pointerEvents
+        prev.extraStyle === next.extraStyle
+    );
+});
