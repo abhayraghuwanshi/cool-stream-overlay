@@ -98,19 +98,23 @@ const useCapture = ({ isObsRecording }) => {
 
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
-                video: true,
-                audio: true,
-                selfBrowserSurface: 'exclude', // prevent selecting this tab (avoids infinity mirror)
+                video: { frameRate: { ideal: 30 } },
+                // audio: false — omit audio so Chrome's autoplay policy never blocks
+                // the <video> element. Audio is captured separately during recording.
+                selfBrowserSurface: 'exclude',
             });
             const label  = `Screen ${slot + 1}`;
+            const screen = { slot, stream, label };
 
             stream.getVideoTracks()[0].onended = () =>
                 setScreens(prev => prev.filter(s => s.slot !== slot));
 
-            setScreens(prev => [...prev, { slot, stream, label }]);
+            setScreens(prev => [...prev, screen]);
             setError('screen', null);
+            return screen;
         } catch (e) {
             if (e.name !== 'NotAllowedError') setError('screen', e.message);
+            return null;
         }
     }, []); // eslint-disable-line
 

@@ -188,37 +188,42 @@ const DraggableBox = ({
                 ...extraStyle,
             }}
         >
-            {/* ── Drag handle (edit mode only) ── */}
-            <div
-                onMouseDown={onDragMouseDown}
-                style={{
-                    position: 'absolute',
-                    top: 0, left: 0, right: 0,
-                    height:       editMode ? 22 : 0,
-                    overflow:     'hidden',
-                    zIndex:       31,
-                    cursor:       editMode ? 'move' : 'default',
-                    background:   'rgba(30,27,75,0.88)',
-                    borderBottom: editMode ? '1px solid rgba(99,102,241,0.3)' : 'none',
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'space-between',
-                    padding:        '0 6px',
-                    userSelect:     'none',
-                    transition:     'height 0.15s',
-                }}
-            >
-                <span style={{ fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: '#a5b4fc' }}>
-                    {title}
-                </span>
-
-                {selected && (
-                    <span style={{ display: 'flex', gap: 2 }}>
-                        <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(id); }} title="Bring forward">▲</LayerBtn>
-                        <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(id); }} title="Send backward">▼</LayerBtn>
+            {/* ── Drag handle — overlays top of content, never shifts it ── */}
+            {editMode && (
+                <div
+                    onMouseDown={onDragMouseDown}
+                    style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0,
+                        height: 20,
+                        zIndex: 31,
+                        cursor: 'move',
+                        background: selected ? 'rgba(24,22,64,0.92)' : 'rgba(6,6,18,0.76)',
+                        borderBottom: '1px solid rgba(99,102,241,0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0 5px 0 6px',
+                        userSelect: 'none',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <span style={{
+                        fontSize: 8, fontFamily: 'monospace',
+                        textTransform: 'uppercase', letterSpacing: 2,
+                        color: selected ? '#a5b4fc' : 'rgba(165,180,252,0.42)',
+                        lineHeight: 1,
+                    }}>
+                        {title}
                     </span>
-                )}
-            </div>
+                    {selected && (
+                        <span style={{ display: 'flex', gap: 2 }}>
+                            <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(id); }} title="Bring forward">▲</LayerBtn>
+                            <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(id); }} title="Send backward">▼</LayerBtn>
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* ── Hover label (non-edit mode) ── */}
             {!editMode && hovered && (
@@ -239,13 +244,8 @@ const DraggableBox = ({
                 </div>
             )}
 
-            {/* ── Content ── */}
-            <div style={{
-                width:     '100%',
-                height:    editMode ? 'calc(100% - 22px)' : '100%',
-                marginTop: editMode ? 22 : 0,
-                overflow:  'hidden',
-            }}>
+            {/* ── Content — always full height ── */}
+            <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
                 {children}
             </div>
 

@@ -1,5 +1,5 @@
 {
-  "showFaceCam": true,
+  "showFaceCam": false,
   "showHandCam": true,
   "showRoomCam": true,
   "tasks": [
@@ -57,30 +57,38 @@
       "h": 54.42789968652038
     },
     "screen_0": {
-      "x": 55.89285255904862,
-      "y": 37.82696177062374,
-      "w": 42.96384675732218,
-      "h": 51.403734909456745
+      "x": -0.3392857142857143,
+      "y": 1.1464684959349594,
+      "w": 99.19285714285714,
+      "h": 88.07799796747967
+    },
+    "screen_1": {
+      "x": 0,
+      "y": 0,
+      "w": 96.34443795863909,
+      "h": 90.28580960854093
     }
   },
   "boxVisibility": {
     "faceCam": true,
-    "handCam": true,
-    "roomCam": true,
-    "socialFeed": true,
-    "aiCompanion": true,
-    "currentTask": true
+    "handCam": false,
+    "roomCam": false,
+    "socialFeed": false,
+    "aiCompanion": false,
+    "currentTask": false,
+    "screen_0": false,
+    "screen_1": true
   },
   "elements": [
     {
       "id": "el_1775052217434_jgkw",
       "type": "clock",
-      "hidden": false,
+      "hidden": true,
       "box": {
-        "x": 16.692988427501703,
-        "y": 2.3293084522502743,
-        "w": 24,
-        "h": 8
+        "x": 35.11343088374706,
+        "y": 7.004894456916706,
+        "w": 41.97485823882589,
+        "h": 31.756005338078293
       },
       "opacity": 1,
       "borderRadius": 0,
@@ -103,12 +111,12 @@
     {
       "id": "el_1775053399330_m142",
       "type": "text",
-      "hidden": false,
+      "hidden": true,
       "box": {
-        "x": 68.26294456066945,
-        "y": 82.76848591549296,
-        "w": 29.999673117154813,
-        "h": 10.099660462776662
+        "x": 68.31220813875916,
+        "y": 10.648490482105684,
+        "w": 31.69785031847134,
+        "h": 26.701061320754715
       },
       "opacity": 1,
       "borderRadius": 0,

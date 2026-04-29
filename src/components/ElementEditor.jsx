@@ -136,13 +136,13 @@ const SelectInput = ({ value, onChange, options }) => (
 );
 
 const Divider = () => (
-    <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+    <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
 );
 
 const Group = ({ label, children }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, width: '100%' }}>
         {label && <Label>{label}</Label>}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             {children}
         </div>
     </div>
@@ -169,21 +169,15 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
     return (
         <div
             style={{
-                position: 'absolute',
-                bottom: 8, left: '50%',
-                transform: 'translateX(-50%)',
+                width: '100%',
+                boxSizing: 'border-box',
                 background: 'rgba(7,7,16,0.94)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 12,
-                zIndex: 300,
-                padding: '10px 14px',
+                padding: '12px 14px 16px',
                 display: 'flex',
-                alignItems: 'flex-end',
+                flexDirection: 'column',
+                alignItems: 'stretch',
                 gap: 12,
-                boxShadow: '0 -4px 32px rgba(0,0,0,0.5)',
-                maxWidth: 'calc(100vw - 32px)',
-                overflowX: 'auto',
+                overflowX: 'hidden',
             }}
         >
             {/* ── Type badge ── */}

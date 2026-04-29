@@ -100,13 +100,13 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
 
     return (
         <motion.div
-            initial={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: 8 }}
             animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -8 }}
+            exit={{ opacity: 0, y: 8 }}
             transition={{ duration: 0.15 }}
             style={{
                 position: 'absolute',
-                right: 8, top: 56,
+                right: 8, bottom: 64,
                 width: 268,
                 zIndex: 200,
                 background: 'rgba(9,9,18,0.94)',
@@ -114,7 +114,7 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                 border: '1px solid rgba(255,255,255,0.07)',
                 borderRadius: 12,
                 boxShadow: '0 8px 32px rgba(0,0,0,0.65)',
-                maxHeight: 'calc(100vh - 72px)',
+                maxHeight: 'calc(100vh - 88px)',
                 overflowY: 'auto',
                 userSelect: 'none',
             }}

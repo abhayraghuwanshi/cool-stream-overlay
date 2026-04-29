@@ -1,11 +1,10 @@
-import { AnimatePresence, memo, motion } from 'framer-motion';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
 import { useOBS } from '../context/OBSContext';
 import useCapture, { formatElapsed } from '../hooks/useCapture';
 import AICompanion from './AICompanion';
 import BackgroundPanel, { bgToStyle } from './BackgroundPanel';
-import CapturePanel from './CapturePanel';
 import CurrentTask from './CurrentTask';
 import DraggableBox from './DraggableBox';
 import ElementEditor from './ElementEditor';
@@ -25,6 +24,8 @@ const DEFAULT_BOXES = {
 };
 
 const DEFAULT_SCREEN_BOX = { x: 0, y: 0, w: 79, h: 84 };
+
+const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
 // Memoised wrapper so the VideoFeed inside a screen-capture box doesn't
 // re-render every time OverlayLayout re-renders (e.g. on box drag).
@@ -58,6 +59,43 @@ const ScreenCaptureBox = memo(
             prev.extraStyle === next.extraStyle
         );
     }
+);
+
+const ElementBox = memo(
+    ({
+        element, zIndex, selected, editMode, canvasRef, extraStyle,
+        onSelect, onBoxChange, onUploadLogo,
+    }) => {
+        const handleUploadLogo = useCallback(() => onUploadLogo(element.id), [element.id, onUploadLogo]);
+
+        return (
+            <DraggableBox
+                id={element.id}
+                title={elementTitle(element.type)}
+                box={element.box}
+                zIndex={zIndex}
+                selected={selected}
+                onSelect={onSelect}
+                onBoxChange={onBoxChange}
+                editMode={editMode}
+                canvasRef={canvasRef}
+                extraStyle={extraStyle}
+            >
+                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} />
+            </DraggableBox>
+        );
+    },
+    (prev, next) => (
+        prev.element === next.element &&
+        prev.zIndex === next.zIndex &&
+        prev.selected === next.selected &&
+        prev.editMode === next.editMode &&
+        prev.canvasRef === next.canvasRef &&
+        prev.extraStyle === next.extraStyle &&
+        prev.onSelect === next.onSelect &&
+        prev.onBoxChange === next.onBoxChange &&
+        prev.onUploadLogo === next.onUploadLogo
+    )
 );
 
 const DEFAULT_VISIBILITY = {
@@ -97,14 +135,16 @@ const OverlayLayout = () => {
 
     const [showSettings, setShowSettings] = useState(false);
     const [showBgPanel, setShowBgPanel] = useState(false);
-    const [showCapturePanel, setShowCapturePanel] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
 
     const capture = useCapture({ isObsRecording: isRecording, boxes, canvasRef });
-    const { streams, screens, addScreenCapture, removeScreenCapture, recording } = capture;
+    const {
+        streams, screens, addScreenCapture, removeScreenCapture, recording,
+        startRecording, stopRecording, downloadRecording,
+    } = capture;
 
     // ── OBS recording — close edit panels ───────────────────────────────────────
     useEffect(() => {
@@ -113,14 +153,8 @@ const OverlayLayout = () => {
             setSelectedBox(null);
             setSelectedElementId(null);
             setShowBgPanel(false);
-            setShowCapturePanel(false);
         }
     }, [isRecording]);
-
-    // ── In-app recording — close capture panel so overlay is clean ───────────
-    useEffect(() => {
-        if (recording?.active) setShowCapturePanel(false);
-    }, [recording?.active]);
 
     // ── Canvas click — deselect ──────────────────────────────────────────────
     const onCanvasMouseDown = useCallback((e) => {
@@ -213,6 +247,15 @@ const OverlayLayout = () => {
 
     const updateElementBox = useCallback((id, box) => updateElement(id, { box }), [updateElement]);
 
+    const selectElement = useCallback((id) => {
+        setSelectedElementId(id);
+        setSelectedBox(null);
+    }, []);
+
+    const onUploadLogo = useCallback((id) => {
+        setSelectedElementId(id);
+    }, []);
+
     // ── Sync zOrder when screens are added/removed ───────────────────────────
     useEffect(() => {
         setZOrder(prev => {
@@ -275,6 +318,29 @@ const OverlayLayout = () => {
             return { ...s, ...updates };
         });
     }, []);
+
+    const handleAddScreenCapture = useCallback(async () => {
+        const screen = await addScreenCapture();
+        if (!screen) return;
+
+        const boxId = `screen_${screen.slot}`;
+        setLayoutSettings(s => ({
+            ...s,
+            boxVisibility: {
+                ...(s.boxVisibility ?? DEFAULT_VISIBILITY),
+                [boxId]: true,
+            },
+        }));
+        setBoxes(prev => {
+            if (prev[boxId]) return prev;
+            const updated = { ...prev, [boxId]: DEFAULT_SCREEN_BOX };
+            boxesRef.current = updated;
+            return updated;
+        });
+        setSelectedBox(boxId);
+        setSelectedElementId(null);
+        setZOrder(prev => [...prev.filter(id => id !== boxId), boxId]);
+    }, [addScreenCapture]);
 
     // ── Backend sync ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -356,8 +422,19 @@ const OverlayLayout = () => {
 
     const selectedElement = elements.find(el => el.id === selectedElementId) ?? null;
 
-    const shouldRenderBox = (id) => editMode || getBoxVisible(id);
-    const hiddenOpacity = (id) => !getBoxVisible(id) ? { opacity: 0.25, pointerEvents: editMode ? 'auto' : 'none' } : undefined;
+    const shouldRenderBox = (id) => getBoxVisible(id);
+
+    // ── Recording — close all panels BEFORE the browser dialog appears ──────
+    // Without this, the Capture panel stays visible during the picker and ends
+    // up captured in the recording (infinity-mirror effect).
+    const handleStartRecording = useCallback(async () => {
+        setEditMode(false);
+        setSelectedBox(null);
+        setSelectedElementId(null);
+        setShowBgPanel(false);
+        await new Promise(r => setTimeout(r, 120));
+        startRecording();
+    }, [startRecording]);
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
@@ -381,51 +458,99 @@ const OverlayLayout = () => {
         </div>
     ), [tasks, onTasksChange]);
 
+    // In edit mode the canvas is a 16:9 preview inside the editor shell.
+    // In live mode the canvas is position:absolute filling the viewport.
+    // canvasRef always points to the same DOM node so video streams survive the toggle.
+    const inEditor = editMode && !isRecording;
+    const canvasBg = (!background || background.type === 'transparent')
+        ? (inEditor ? {
+            backgroundImage: 'linear-gradient(45deg,#1a1a1a 25%,transparent 25%),linear-gradient(-45deg,#1a1a1a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1a1a 75%),linear-gradient(-45deg,transparent 75%,#1a1a1a 75%)',
+            backgroundSize: '20px 20px', backgroundPosition: '0 0,0 10px,10px -10px,-10px 0px', backgroundColor: '#111',
+          } : {})
+        : bgToStyle(background);
+    const editorWorkspaceBg = inEditor && background && background.type !== 'transparent'
+        ? bgToStyle(background)
+        : { background: '#050510' };
+    const activeCanvasBg = inEditor ? {} : canvasBg;
+
     return (
-        <div
-            ref={canvasRef}
-            onMouseDown={onCanvasMouseDown}
-            className={`w-screen h-screen relative overflow-hidden font-inter ${isRecording ? 'border-[4px] border-red-500/50' : ''}`}
-            style={{
-                ...(!background || background.type === 'transparent'
-                    ? editMode
-                        ? {
-                            backgroundImage: 'linear-gradient(45deg,#1a1a1a 25%,transparent 25%),linear-gradient(-45deg,#1a1a1a 25%,transparent 25%),linear-gradient(45deg,transparent 75%,#1a1a1a 75%),linear-gradient(-45deg,transparent 75%,#1a1a1a 75%)',
-                            backgroundSize: '20px 20px',
-                            backgroundPosition: '0 0,0 10px,10px -10px,-10px 0px',
-                            backgroundColor: '#111',
-                        }
-                        : {}
-                    : bgToStyle(background)
-                ),
-            }}
-        >
-            {/* Recording flash */}
+        <div style={{
+            width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative',
+            background: inEditor ? '#0a0a12' : 'transparent',
+        }}>
+            {/* OBS recording flash */}
             {isRecording && (
                 <motion.div
                     initial={{ opacity: 0 }}
                     animate={{ opacity: [0, 0.2, 0] }}
                     transition={{ duration: 2, repeat: Infinity }}
-                    className="absolute inset-0 bg-red-500 pointer-events-none z-0"
+                    style={{ position: 'absolute', inset: 0, background: 'rgba(239,68,68,1)', pointerEvents: 'none', zIndex: 0 }}
                 />
             )}
 
-            {/* Edit mode grid */}
-            {editMode && (
-                <div
-                    className="absolute inset-0 pointer-events-none z-0"
-                    style={{
-                        backgroundImage: 'linear-gradient(rgba(99,102,241,0.04) 1px,transparent 1px),linear-gradient(90deg,rgba(99,102,241,0.04) 1px,transparent 1px)',
-                        backgroundSize: '5% 5%',
-                    }}
-                />
-            )}
+            {/* ── EDITOR CHROME — header + panels, hidden in live / OBS mode ── */}
+            {inEditor && (<>
+                {/* Header bar */}
+                <div style={{
+                    position: 'absolute', top: 0, left: 0, right: 0, height: 40, zIndex: 400,
+                    background: 'rgba(8,8,18,0.98)', borderBottom: '1px solid rgba(255,255,255,0.07)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                    padding: '0 12px 0 10px',
+                }}>
+                    {/* Left: logo + title */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        <div style={{
+                            width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                            background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.45)',
+                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#a5b4fc',
+                        }}>⬤</div>
+                        <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
+                            Overlay Studio
+                        </span>
+                    </div>
+                    {/* Right: actions */}
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <HdrBtn onClick={() => setShowBgPanel(v => !v)} active={showBgPanel}>Background</HdrBtn>
+                        <HdrSep />
+                        <HdrBtn icon onClick={() => setShowSettings(v => !v)} active={showSettings}><SettingsIcon /></HdrBtn>
+                        <HdrSep />
+                        {recording?.active ? (
+                            <button onClick={stopRecording} style={{ padding: '3px 10px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(120,20,20,0.5)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px rgba(239,68,68,0.9)' }} />
+                                {formatElapsed(recording.elapsed)}
+                            </button>
+                        ) : (
+                            <button onClick={handleStartRecording} style={{ padding: '3px 10px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.25)', background: 'rgba(80,10,10,0.4)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(239,68,68,0.7)' }} />
+                                Record
+                            </button>
+                        )}
+                        {recording?.blob && !recording?.active && (
+                            <HdrBtn onClick={() => downloadRecording(recording.blob)}>↓ Save</HdrBtn>
+                        )}
+                        <HdrSep />
+                        {/* OBS pill */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: isConnected ? '#22c55e' : 'rgba(255,80,80,0.5)', boxShadow: isConnected ? '0 0 5px rgba(34,197,94,0.8)' : 'none' }} />
+                            <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: isConnected ? 'rgba(34,197,94,0.55)' : 'rgba(255,255,255,0.2)' }}>
+                                OBS {isConnected ? 'Live' : 'Off'}
+                            </span>
+                        </div>
+                        <HdrSep />
+                        <button
+                            onClick={() => { setEditMode(false); setSelectedBox(null); setSelectedElementId(null); setShowBgPanel(false); }}
+                            style={{ padding: '3px 12px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(99,102,241,0.45)', background: 'rgba(79,70,229,0.4)', color: '#fff', cursor: 'pointer' }}
+                        >✓ Done</button>
+                    </div>
+                </div>
 
-            {/* ── Panels ── */}
-            <AnimatePresence>
-                {editMode && (
+                {/* Left panel: layers + sources */}
+                <div style={{
+                    position: 'absolute', top: 40, left: 0, bottom: 0, width: 240, zIndex: 300,
+                    background: 'rgba(7,7,16,0.98)', borderRight: '1px solid rgba(255,255,255,0.07)',
+                    overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                }}>
                     <LayersPanel
-                        key="layers"
                         boxVisibility={boxVisibility}
                         onToggleBuiltin={toggleBuiltinVisibility}
                         elements={elements}
@@ -433,254 +558,215 @@ const OverlayLayout = () => {
                         selectedBox={selectedBox}
                         onToggleElement={toggleElementVisibility}
                         onDeleteElement={deleteElement}
-                        onSelectElement={(id) => { setSelectedElementId(id); setSelectedBox(null); }}
+                        onSelectElement={selectElement}
                         onSelectBox={selectBox}
                         onAddElement={addElement}
                         screens={screens}
-                        onAddScreen={addScreenCapture}
+                        onAddScreen={handleAddScreenCapture}
                         onRemoveScreen={removeScreenCapture}
                         onOpenBackground={() => setShowBgPanel(v => !v)}
                         onResetLayout={resetLayout}
+                        devices={capture.devices}
+                        streams={streams}
+                        selectedDevices={capture.selectedDevices}
+                        setSelectedDevice={capture.setSelectedDevice}
+                        startCameraStream={capture.startCameraStream}
+                        stopCameraStream={capture.stopCameraStream}
+                        errors={capture.errors}
                     />
-                )}
-            </AnimatePresence>
+                </div>
 
-            {editMode && showBgPanel && (
-                <BackgroundPanel
-                    bg={background}
-                    onChange={(newBg) => updateLayout({ background: newBg })}
-                    onClose={() => setShowBgPanel(false)}
-                />
-            )}
-
-            <AnimatePresence>
-                {showCapturePanel && (
-                    <CapturePanel
-                        capture={capture}
-                        isObsRecording={isRecording}
-                        onClose={() => setShowCapturePanel(false)}
-                    />
-                )}
-            </AnimatePresence>
-
-            {/* ── Custom elements ── */}
-            {elements.map((el, i) => {
-                if (!editMode && el.hidden) return null;
-                return (
-                    <DraggableBox
-                        key={el.id}
-                        id={el.id}
-                        title={el.type.charAt(0).toUpperCase() + el.type.slice(1)}
-                        box={el.box}
-                        zIndex={100 + i + (selectedElementId === el.id ? 50 : 0)}
-                        selected={selectedElementId === el.id}
-                        onSelect={(id) => { setSelectedElementId(id); setSelectedBox(null); }}
-                        onBoxChange={updateElementBox}
-                        editMode={editMode}
-                        canvasRef={canvasRef}
-                        extraStyle={el.hidden ? { opacity: 0.25 } : undefined}
-                    >
-                        <ElementRenderer element={el} editMode={editMode} onUploadLogo={() => setSelectedElementId(el.id)} />
-                    </DraggableBox>
-                );
-            })}
-
-            {/* ── Screen Captures ── */}
-            {screens.map(sc => {
-                const boxId = `screen_${sc.slot}`;
-                if (!editMode && !getBoxVisible(boxId)) return null;
-                return (
-                    <ScreenCaptureBox
-                        key={boxId}
-                        sc={sc}
-                        box={boxes[boxId] ?? DEFAULT_SCREEN_BOX}
-                        zIndex={getZIndex(boxId)}
-                        selected={selectedBox === boxId}
-                        onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                        onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                        extraStyle={hiddenOpacity(boxId)}
-                    />
-                );
-            })}
-
-            {/* ── Face Cam ── */}
-            {shouldRenderBox('faceCam') && (
-                <DraggableBox
-                    id="faceCam" title="Face Cam"
-                    box={boxes.faceCam} zIndex={getZIndex('faceCam')}
-                    selected={selectedBox === 'faceCam'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('faceCam')}
-                >
-                    {faceCamChild}
-                </DraggableBox>
-            )}
-
-            {/* ── Social Feed ── */}
-            {shouldRenderBox('socialFeed') && (
-                <DraggableBox
-                    id="socialFeed" title="Social Feed"
-                    box={boxes.socialFeed} zIndex={getZIndex('socialFeed')}
-                    selected={selectedBox === 'socialFeed'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('socialFeed')}
-                >
-                    {socialFeedChild}
-                </DraggableBox>
-            )}
-
-            {/* ── AI Companion ── */}
-            {shouldRenderBox('aiCompanion') && (
-                <DraggableBox
-                    id="aiCompanion" title="AI Companion"
-                    box={boxes.aiCompanion} zIndex={getZIndex('aiCompanion')}
-                    selected={selectedBox === 'aiCompanion'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('aiCompanion')}
-                >
-                    {aiCompanionChild}
-                </DraggableBox>
-            )}
-
-            {/* ── Hand Cam ── */}
-            {shouldRenderBox('handCam') && (
-                <DraggableBox
-                    id="handCam" title="Hand Cam"
-                    box={boxes.handCam} zIndex={getZIndex('handCam')}
-                    selected={selectedBox === 'handCam'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('handCam')}
-                >
-                    {handCamChild}
-                </DraggableBox>
-            )}
-
-            {/* ── Room Cam ── */}
-            {shouldRenderBox('roomCam') && (
-                <DraggableBox
-                    id="roomCam" title="Room Cam"
-                    box={boxes.roomCam} zIndex={getZIndex('roomCam')}
-                    selected={selectedBox === 'roomCam'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('roomCam')}
-                >
-                    {roomCamChild}
-                </DraggableBox>
-            )}
-
-            {/* ── Current Task ── */}
-            {shouldRenderBox('currentTask') && (
-                <DraggableBox
-                    id="currentTask" title="Current Task"
-                    box={boxes.currentTask} zIndex={getZIndex('currentTask')}
-                    selected={selectedBox === 'currentTask'}
-                    onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown}
-                    onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}
-                    extraStyle={hiddenOpacity('currentTask')}
-                >
-                    {currentTaskChild}
-                </DraggableBox>
-            )}
-
-            {/* ── Top-right controls ── */}
-            <div className="absolute top-4 right-4 flex items-center gap-2 z-50">
-
-                {!isRecording && !recording?.active && (
-                    <button
-                        onClick={() => {
-                            setEditMode(v => !v);
-                            if (editMode) { setSelectedElementId(null); setShowBgPanel(false); setShowCapturePanel(false); }
-                        }}
-                        className={`px-3 py-1.5 rounded-full text-[10px] font-mono uppercase tracking-wider border transition-all ${editMode
-                                ? 'bg-indigo-600/80 border-indigo-400/50 text-white shadow-lg shadow-indigo-500/20'
-                                : 'bg-black/40 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
-                            }`}
-                    >
-                        {editMode ? '✓ Done' : 'Edit Layout'}
-                    </button>
-                )}
-
-                {!isRecording && !recording?.active && (
-                    <button
-                        onClick={() => setShowCapturePanel(v => !v)}
-                        className={`px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border transition-all ${showCapturePanel
-                                ? 'bg-violet-600/80 border-violet-400/50 text-white'
-                                : 'bg-black/40 border-white/10 text-white/40 hover:text-white/70 hover:border-white/20'
-                            }`}
-                    >
-                        Capture
-                    </button>
-                )}
-
-                {/* In-app recording pill */}
-                {!isRecording && recording?.active && (
-                    <button
-                        onClick={capture.stopRecording}
-                        className="px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border bg-red-900/60 border-red-500/40 text-red-300 animate-pulse"
-                    >
-                        ■ {formatElapsed(recording.elapsed)}
-                    </button>
-                )}
-                {!isRecording && recording?.blob && !recording.active && (
-                    <button
-                        onClick={() => capture.downloadRecording(recording.blob)}
-                        className="px-2.5 py-1 rounded-full text-[10px] font-mono uppercase tracking-wider border bg-emerald-900/60 border-emerald-500/40 text-emerald-300"
-                    >
-                        ↓ Save
-                    </button>
-                )}
-
-                <button
-                    onClick={() => setShowSettings(!showSettings)}
-                    className="p-1.5 rounded-full bg-black/40 backdrop-blur border border-white/5 text-white/50 hover:text-white hover:bg-white/10 transition-colors"
-                >
-                    <SettingsIcon />
-                </button>
-
-                <AnimatePresence>
-                    {showSettings && (
-                        <SettingsModal
-                            onClose={() => setShowSettings(false)}
-                            showFaceCam={showFaceCam} setShowFaceCam={(v) => updateLayout({ showFaceCam: v, boxVisibility: { ...boxVisibility, faceCam: v } })}
-                            showHandCam={showHandCam} setShowHandCam={(v) => updateLayout({ showHandCam: v, boxVisibility: { ...boxVisibility, handCam: v } })}
-                            showRoomCam={showRoomCam} setShowRoomCam={(v) => updateLayout({ showRoomCam: v, boxVisibility: { ...boxVisibility, roomCam: v } })}
-                            socialGithub={socialGithub} setSocialGithub={(v) => updateLayout({ socialGithub: v })}
-                            socialTwitter={socialTwitter} setSocialTwitter={(v) => updateLayout({ socialTwitter: v })}
-                            socialLinkedin={socialLinkedin} setSocialLinkedin={(v) => updateLayout({ socialLinkedin: v })}
-                            useGPU={useGPU} setUseGPU={(v) => updateLayout({ useGPU: v })}
+                {/* Right panel: element editor */}
+                {selectedElement && (
+                    <div style={{
+                        position: 'absolute', top: 40, right: 0, bottom: 0, width: 260, zIndex: 300,
+                        background: 'rgba(7,7,16,0.98)', borderLeft: '1px solid rgba(255,255,255,0.07)',
+                        overflow: 'auto',
+                    }}>
+                        <ElementEditor
+                            element={selectedElement}
+                            onChange={(changes) => updateElement(selectedElement.id, changes)}
+                            onDelete={() => deleteElement(selectedElement.id)}
                         />
-                    )}
-                </AnimatePresence>
+                    </div>
+                )}
 
-                <div className="flex items-center gap-2 bg-black/40 backdrop-blur px-3 py-1 rounded-full border border-white/5 pointer-events-none">
-                    <div className={`w-2 h-2 rounded-full ${isConnected ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.8)]' : 'bg-red-500'}`} />
-                    <span className="text-[10px] font-mono text-white/50 tracking-wider">OBS {isConnected ? 'LINKED' : 'OFFLINE'}</span>
+                {/* Background panel */}
+                {showBgPanel && (
+                    <BackgroundPanel
+                        bg={background}
+                        onChange={(newBg) => updateLayout({ background: newBg })}
+                        onClose={() => setShowBgPanel(false)}
+                    />
+                )}
+            </>)}
+
+            {/* Settings modal — always in fixed overlay */}
+            <AnimatePresence>
+                {showSettings && (
+                    <SettingsModal
+                        onClose={() => setShowSettings(false)}
+                        showFaceCam={showFaceCam} setShowFaceCam={(v) => updateLayout({ showFaceCam: v, boxVisibility: { ...boxVisibility, faceCam: v } })}
+                        showHandCam={showHandCam} setShowHandCam={(v) => updateLayout({ showHandCam: v, boxVisibility: { ...boxVisibility, handCam: v } })}
+                        showRoomCam={showRoomCam} setShowRoomCam={(v) => updateLayout({ showRoomCam: v, boxVisibility: { ...boxVisibility, roomCam: v } })}
+                        socialGithub={socialGithub} setSocialGithub={(v) => updateLayout({ socialGithub: v })}
+                        socialTwitter={socialTwitter} setSocialTwitter={(v) => updateLayout({ socialTwitter: v })}
+                        socialLinkedin={socialLinkedin} setSocialLinkedin={(v) => updateLayout({ socialLinkedin: v })}
+                        useGPU={useGPU} setUseGPU={(v) => updateLayout({ useGPU: v })}
+                    />
+                )}
+            </AnimatePresence>
+
+            {/* ── CANVAS POSITIONING WRAPPER ── */}
+            {/* In editor: offset by header + left/right panels, canvas is 16:9 preview */}
+            {/* In live:   fills the entire viewport absolutely */}
+            {/* Canvas wrapper — in editor it's a flex centering box; in live it's invisible */}
+            <div style={{
+                position: 'absolute',
+                top:    inEditor ? 40 : 0,
+                left:   inEditor ? 240 : 0,
+                right:  inEditor ? (selectedElement ? 260 : 0) : 0,
+                bottom: 0,
+                display: inEditor ? 'flex' : 'block',
+                alignItems: 'center',
+                justifyContent: 'center',
+                padding: inEditor ? 14 : 0,
+                boxSizing: 'border-box',
+                ...(inEditor ? editorWorkspaceBg : { background: 'transparent' }),
+            }}>
+                {/* Dot-grid backdrop */}
+                {inEditor && (
+                    <div style={{
+                        position: 'absolute', inset: 0, pointerEvents: 'none',
+                        backgroundImage: 'radial-gradient(rgba(99,102,241,0.12) 1px, transparent 1px)',
+                        backgroundSize: '24px 24px',
+                    }} />
+                )}
+
+                {/* ── THE CANVAS ──
+                    Live mode  → position:absolute filling the viewport (OBS sees this).
+                    Editor mode → 16:9 preview that fits the available space.
+                    CSS min() picks the largest 16:9 box constrained by BOTH dimensions:
+                      min(availW, availH × 16/9)  →  width
+                    where availW = 100vw - leftPanel - padding×2
+                          availH = 100vh - header  - padding×2
+                */}
+                <div
+                    ref={canvasRef}
+                    onMouseDown={onCanvasMouseDown}
+                    className={`font-inter overflow-hidden ${isRecording ? 'outline outline-4 outline-red-500/50' : ''}`}
+                    style={{
+                        ...(inEditor ? {
+                            position: 'relative',
+                            width:  `min(calc(100vw - ${selectedElement ? 514 : 268}px), calc((100vh - 68px) * 16 / 9))`,
+                            height: `min(calc(100vh - 68px), calc((100vw - ${selectedElement ? 514 : 268}px) * 9 / 16))`,
+                            flexShrink: 0,
+                        } : {
+                            position: 'absolute',
+                            inset: 0,
+                        }),
+                        ...activeCanvasBg,
+                    }}
+                >
+                    {/* ── Custom elements ── */}
+                    {elements.map((el, i) => {
+                        if (el.hidden) return null;
+                        return (
+                            <ElementBox
+                                key={el.id}
+                                element={el}
+                                zIndex={100 + i + (selectedElementId === el.id ? 50 : 0)}
+                                selected={selectedElementId === el.id}
+                                onSelect={selectElement}
+                                onBoxChange={updateElementBox}
+                                onUploadLogo={onUploadLogo}
+                                editMode={editMode}
+                                canvasRef={canvasRef}
+                            />
+                        );
+                    })}
+
+                    {/* ── Screen Captures ── */}
+                    {screens.map(sc => {
+                        const boxId = `screen_${sc.slot}`;
+                        if (!getBoxVisible(boxId)) return null;
+                        return <ScreenCaptureBox key={boxId} sc={sc} box={boxes[boxId] ?? DEFAULT_SCREEN_BOX} zIndex={getZIndex(boxId)} selected={selectedBox === boxId} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef} />;
+                    })}
+
+                    {shouldRenderBox('faceCam') && <DraggableBox id="faceCam" title="Face Cam" box={boxes.faceCam} zIndex={getZIndex('faceCam')} selected={selectedBox === 'faceCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{faceCamChild}</DraggableBox>}
+                    {shouldRenderBox('socialFeed') && <DraggableBox id="socialFeed" title="Social Feed" box={boxes.socialFeed} zIndex={getZIndex('socialFeed')} selected={selectedBox === 'socialFeed'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{socialFeedChild}</DraggableBox>}
+                    {shouldRenderBox('aiCompanion') && <DraggableBox id="aiCompanion" title="AI Companion" box={boxes.aiCompanion} zIndex={getZIndex('aiCompanion')} selected={selectedBox === 'aiCompanion'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{aiCompanionChild}</DraggableBox>}
+                    {shouldRenderBox('handCam') && <DraggableBox id="handCam" title="Hand Cam" box={boxes.handCam} zIndex={getZIndex('handCam')} selected={selectedBox === 'handCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{handCamChild}</DraggableBox>}
+                    {shouldRenderBox('roomCam') && <DraggableBox id="roomCam" title="Room Cam" box={boxes.roomCam} zIndex={getZIndex('roomCam')} selected={selectedBox === 'roomCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{roomCamChild}</DraggableBox>}
+                    {shouldRenderBox('currentTask') && <DraggableBox id="currentTask" title="Current Task" box={boxes.currentTask} zIndex={getZIndex('currentTask')} selected={selectedBox === 'currentTask'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{currentTaskChild}</DraggableBox>}
                 </div>
             </div>
 
-            {editMode && selectedElement && (
-                <ElementEditor
-                    element={selectedElement}
-                    onChange={(changes) => updateElement(selectedElement.id, changes)}
-                    onDelete={() => deleteElement(selectedElement.id)}
-                />
-            )}
-
-            {editMode && !selectedElement && (
-                <div className="absolute bottom-3 left-1/2 -translate-x-1/2 z-50 px-3 py-1.5 bg-black/60 border border-white/8 rounded-full backdrop-blur pointer-events-none">
-                    <span className="text-[10px] font-mono text-white/30 tracking-wide">
-                        Drag · Resize edges · Eye icon to hide · <strong className="text-white/50">+ Add Element</strong> in layers panel
-                    </span>
+            {/* ── LIVE MODE DOCK — minimal pill, hidden when OBS is recording ── */}
+            {!editMode && !isRecording && (
+                <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
+                        <DockBtn onClick={() => setEditMode(true)}>Edit Layout</DockBtn>
+                        <DockSep />
+                        {recording?.active ? (
+                            <button onClick={stopRecording} style={{ padding: '4px 10px', borderRadius: 8, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.4)', background: 'rgba(127,29,29,0.55)', color: '#fca5a5', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 6 }}>
+                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 6px rgba(239,68,68,0.9)', flexShrink: 0 }} />
+                                {formatElapsed(recording.elapsed)}
+                            </button>
+                        ) : (
+                            <DockBtn rec onClick={handleStartRecording}>● Rec</DockBtn>
+                        )}
+                        {recording?.blob && !recording?.active && (<><DockSep /><DockBtn onClick={() => downloadRecording(recording.blob)}>↓ Save</DockBtn></>)}
+                        <DockSep />
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 4px 4px 2px' }}>
+                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: isConnected ? '#22c55e' : 'rgba(255,80,80,0.5)', boxShadow: isConnected ? '0 0 5px rgba(34,197,94,0.75)' : 'none' }} />
+                            <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: isConnected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.2)' }}>OBS</span>
+                        </div>
+                    </div>
                 </div>
             )}
         </div>
     );
 };
+
+const HdrBtn = ({ children, active, icon, onClick }) => (
+    <button onClick={onClick} style={{ padding: icon ? '3px 6px' : '3px 9px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.1s', ...(active ? { background: 'rgba(99,102,241,0.2)', borderColor: 'rgba(99,102,241,0.4)', color: '#a5b4fc' } : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.38)' }) }}>
+        {children}
+    </button>
+);
+
+const HdrSep = () => <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />;
+
+const DockBtn = ({ children, active, rec, icon, onClick }) => (
+    <button
+        onClick={onClick}
+        style={{
+            padding: icon ? '4px 7px' : '4px 10px',
+            borderRadius: 8,
+            fontSize: 9,
+            fontFamily: 'monospace',
+            textTransform: 'uppercase',
+            letterSpacing: 1,
+            border: '1px solid',
+            cursor: 'pointer',
+            transition: 'all 0.12s',
+            display: 'flex', alignItems: 'center', gap: 4,
+            lineHeight: 1,
+            ...(rec
+                ? { background: 'rgba(100,20,20,0.45)', borderColor: 'rgba(239,68,68,0.32)', color: '#fca5a5' }
+                : active
+                    ? { background: 'rgba(79,70,229,0.52)', borderColor: 'rgba(99,102,241,0.5)', color: '#fff' }
+                    : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)' }
+            ),
+        }}
+    >
+        {children}
+    </button>
+);
+
+const DockSep = () => (
+    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.07)', margin: '0 3px', flexShrink: 0 }} />
+);
 
 const SettingsIcon = () => (
     <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

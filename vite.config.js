@@ -8,5 +8,8 @@ export default defineConfig({
   server: {
     port: PORTS.FRONTEND,
     strictPort: true, // Fail if port is already in use instead of silently picking another
+    watch: {
+      ignored: ['**/backend/layout-settings.json'],
+    },
   },
 })

@@ -165,27 +165,41 @@ const ElementTypeCard = ({ type, label, color, preview, onClick }) => (
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
+const CAMERA_ROWS = [
+    { slot: 'faceCam', label: 'Face' },
+    { slot: 'handCam', label: 'Hand' },
+    { slot: 'roomCam', label: 'Room' },
+];
+
 const LayersPanel = ({
     // Built-in box visibility
     boxVisibility,
-    onToggleBuiltin,  // (id) => void
+    onToggleBuiltin,
     // Elements
     elements,
     selectedElementId,
     selectedBox,
-    onToggleElement,  // (id) => void
-    onDeleteElement,  // (id) => void
-    onSelectElement,  // (id) => void
-    onSelectBox,      // (id) => void
+    onToggleElement,
+    onDeleteElement,
+    onSelectElement,
+    onSelectBox,
     // Add element
-    onAddElement,     // (type) => void
+    onAddElement,
     // Multi-screen captures
-    screens,          // [{ slot, stream, label }]
+    screens,
     onAddScreen,
-    onRemoveScreen,   // (slot) => void
+    onRemoveScreen,
     // Background / Reset
     onOpenBackground,
     onResetLayout,
+    // Camera / device props
+    devices = { cameras: [], mics: [] },
+    streams = {},
+    selectedDevices = {},
+    setSelectedDevice,
+    startCameraStream,
+    stopCameraStream,
+    errors = {},
 }) => {
     const [showAddPanel, setShowAddPanel] = useState(false);
 
@@ -226,6 +240,38 @@ const LayersPanel = ({
 
             {/* ── Scrollable body ── */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
+
+                {/* ── Cameras ── */}
+                <SectionLabel>Cameras</SectionLabel>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
+                    {CAMERA_ROWS.map(({ slot, label }) => {
+                        const active = !!streams[slot];
+                        const hasDevice = !!selectedDevices[slot];
+                        return (
+                            <div key={slot}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 4px' }}>
+                                    <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: active ? '#22c55e' : 'rgba(255,255,255,0.14)', boxShadow: active ? '0 0 5px rgba(34,197,94,0.6)' : 'none' }} />
+                                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.35)', width: 26, flexShrink: 0 }}>{label}</span>
+                                    <select
+                                        style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', minWidth: 0, outline: 'none', cursor: 'pointer' }}
+                                        value={selectedDevices[slot] ?? ''}
+                                        onChange={e => setSelectedDevice?.(slot, e.target.value)}
+                                    >
+                                        <option value="">— select —</option>
+                                        {devices.cameras.map(c => <option key={c.deviceId} value={c.deviceId}>{c.label}</option>)}
+                                    </select>
+                                    <button
+                                        onClick={() => active ? stopCameraStream?.(slot) : startCameraStream?.(slot, selectedDevices[slot])}
+                                        disabled={!active && !hasDevice}
+                                        style={{ padding: '2px 6px', borderRadius: 4, fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', border: '1px solid', cursor: (!active && !hasDevice) ? 'not-allowed' : 'pointer', opacity: (!active && !hasDevice) ? 0.4 : 1, flexShrink: 0, ...(active ? { background: 'rgba(127,29,29,0.4)', borderColor: 'rgba(239,68,68,0.3)', color: '#fca5a5' } : { background: 'rgba(30,30,60,0.4)', borderColor: 'rgba(99,102,241,0.25)', color: '#a5b4fc' }) }}
+                                    >{active ? 'Stop' : 'Start'}</button>
+                                </div>
+                                {errors?.[slot] && <div style={{ fontSize: 7, color: '#f87171', paddingLeft: 18 }}>{errors[slot]}</div>}
+                            </div>
+                        );
+                    })}
+                </div>
+                <Divider />
 
                 {/* ── Displays ── */}
                 <SectionLabel>Displays</SectionLabel>
