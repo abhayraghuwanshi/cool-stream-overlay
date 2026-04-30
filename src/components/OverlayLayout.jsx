@@ -540,9 +540,9 @@ const OverlayLayout = () => {
                             <RecordModePill
                                 mode={recordMode}
                                 disabled={!canStartRecording}
-                                onSelect={(m) => {
-                                    setRecordMode(m);
-                                    if (m === 'multi') handleStartMultiTrack();
+                                onModeChange={(m) => setRecordMode(m)}
+                                onStart={() => {
+                                    if (recordMode === 'multi') handleStartMultiTrack();
                                     else handleStartRecording();
                                 }}
                             />
@@ -747,9 +747,9 @@ const OverlayLayout = () => {
                             <RecordModePill
                                 mode={recordMode}
                                 disabled={!canStartRecording}
-                                onSelect={(m) => {
-                                    setRecordMode(m);
-                                    if (m === 'multi') handleStartMultiTrack();
+                                onModeChange={(m) => setRecordMode(m)}
+                                onStart={() => {
+                                    if (recordMode === 'multi') handleStartMultiTrack();
                                     else handleStartRecording();
                                 }}
                             />
@@ -779,13 +779,13 @@ const OverlayLayout = () => {
 
 // Segmented toggle pill — clicking a segment selects that mode and starts recording.
 // The last-used mode stays highlighted so repeat recordings need only one click.
-const RecordModePill = ({ mode, disabled, onSelect }) => {
-    const seg = (m, label, dot, activeBg, activeBorder, activeColor, dotColor) => (
+const RecordModePill = ({ mode, disabled, onModeChange, onStart }) => {
+    const seg = (m, label, activeBg, activeColor, dotColor) => (
         <button
-            onClick={() => !disabled && onSelect(m)}
+            onClick={() => !disabled && onModeChange(m)}
             disabled={disabled}
             style={{
-                padding: '4px 10px',
+                padding: '4px 9px',
                 fontSize: 9,
                 fontFamily: 'monospace',
                 textTransform: 'uppercase',
@@ -795,14 +795,14 @@ const RecordModePill = ({ mode, disabled, onSelect }) => {
                 cursor: disabled ? 'not-allowed' : 'pointer',
                 display: 'flex', alignItems: 'center', gap: 5,
                 transition: 'background 0.15s, color 0.15s',
-                background: mode === m ? activeBg   : 'rgba(255,255,255,0.04)',
-                color:      mode === m ? activeColor : 'rgba(255,255,255,0.3)',
+                background: mode === m ? activeBg : 'rgba(255,255,255,0.04)',
+                color:      mode === m ? activeColor : 'rgba(255,255,255,0.28)',
                 lineHeight: 1,
             }}
         >
             <span style={{
                 width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: mode === m ? dotColor : 'rgba(255,255,255,0.18)',
+                background: mode === m ? dotColor : 'rgba(255,255,255,0.15)',
                 boxShadow:  mode === m ? `0 0 5px ${dotColor}` : 'none',
                 transition: 'background 0.15s',
             }} />
@@ -811,17 +811,38 @@ const RecordModePill = ({ mode, disabled, onSelect }) => {
     );
 
     return (
-        <div style={{
-            display: 'flex',
-            borderRadius: 8,
-            border: `1px solid ${mode === 'multi' ? 'rgba(168,85,247,0.3)' : 'rgba(239,68,68,0.25)'}`,
-            overflow: 'hidden',
-            opacity: disabled ? 0.45 : 1,
-            transition: 'border-color 0.2s',
-        }}>
-            {seg('single', 'Rec',   true,  'rgba(100,20,20,0.6)',  '', '#fca5a5', '#ef4444')}
-            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
-            {seg('multi',  'Multi', false, 'rgba(60,10,80,0.65)',  '', '#d8b4fe', '#a855f7')}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: disabled ? 0.45 : 1, transition: 'opacity 0.2s' }}>
+            <div style={{
+                display: 'flex',
+                borderRadius: 7,
+                border: '1px solid rgba(255,255,255,0.08)',
+                overflow: 'hidden',
+            }}>
+                {seg('single', 'Rec',   'rgba(100,20,20,0.55)', '#fca5a5', '#ef4444')}
+                <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />
+                {seg('multi',  'Multi', 'rgba(60,10,80,0.6)',   '#d8b4fe', '#a855f7')}
+            </div>
+            <button
+                onClick={() => !disabled && onStart()}
+                disabled={disabled}
+                style={{
+                    padding: '4px 11px',
+                    borderRadius: 7,
+                    fontSize: 9,
+                    fontFamily: 'monospace',
+                    textTransform: 'uppercase',
+                    letterSpacing: 1,
+                    border: mode === 'multi' ? '1px solid rgba(168,85,247,0.45)' : '1px solid rgba(239,68,68,0.45)',
+                    background: mode === 'multi' ? 'rgba(80,20,110,0.55)' : 'rgba(120,20,20,0.55)',
+                    color: mode === 'multi' ? '#d8b4fe' : '#fca5a5',
+                    cursor: disabled ? 'not-allowed' : 'pointer',
+                    display: 'flex', alignItems: 'center', gap: 5,
+                    transition: 'background 0.15s, border-color 0.15s',
+                    lineHeight: 1,
+                }}
+            >
+                <span style={{ fontSize: 8 }}>▶</span> Start
+            </button>
         </div>
     );
 };
