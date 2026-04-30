@@ -9,10 +9,13 @@ export const formatElapsed = (seconds) => {
 
 const MAX_SCREENS  = 4;
 const CAMERA_SLOTS = ['faceCam', 'handCam', 'roomCam'];
+const CAMERA_IDS   = new Set(CAMERA_SLOTS);
+
+// Recording canvas resolution — matches standard 1080p stream output
+const REC_W = 1920;
+const REC_H = 1080;
 
 const getMimeType = () => {
-    // H.264 is hardware-accelerated on Windows GPU — much sharper than VP9 software encode.
-    // mp4 container works in Chrome 108+; fall back to webm h264, then vp9.
     const types = [
         'video/mp4;codecs=avc1.640028,mp4a.40.2',
         'video/webm;codecs=h264,opus',
@@ -23,14 +26,50 @@ const getMimeType = () => {
     return types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
 };
 
-const HIGH_QUALITY_VIDEO = {
-    frameRate: { ideal: 60 },
-};
+const HIGH_QUALITY_VIDEO = { frameRate: { ideal: 60 } };
 
-// 20 Mbps — headroom for 1080p motion; H.264 hardware encoder handles this easily
+// 20 Mbps — clean headroom for 1080p60; H.264 hardware encoder handles it easily
 const VIDEO_BITS_PER_SECOND = 20_000_000;
 
-const useCapture = ({ isObsRecording }) => {
+// Mirror a MediaStream into a detached <video> element for canvas drawing
+const makeVideoEl = (stream) => {
+    const v = document.createElement('video');
+    v.srcObject = stream;
+    v.muted = true;
+    v.autoplay = true;
+    v.playsInline = true;
+    v.play().catch(() => {});
+    return v;
+};
+
+// objectFit: contain — shows full frame, letterboxed (used for screens)
+const drawContain = (ctx, vid, x, y, w, h) => {
+    if (vid.readyState < 2) return;
+    const vw = vid.videoWidth || w;
+    const vh = vid.videoHeight || h;
+    const scale = Math.min(w / vw, h / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    ctx.drawImage(vid, x + (w - dw) / 2, y + (h - dh) / 2, dw, dh);
+};
+
+// objectFit: cover — fills box, crops overflow (used for cameras)
+const drawCover = (ctx, vid, x, y, w, h) => {
+    if (vid.readyState < 2) return;
+    const vw = vid.videoWidth || w;
+    const vh = vid.videoHeight || h;
+    const scale = Math.max(w / vw, h / vh);
+    const dw = vw * scale;
+    const dh = vh * scale;
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(x, y, w, h);
+    ctx.clip();
+    ctx.drawImage(vid, x - (dw - w) / 2, y - (dh - h) / 2, dw, dh);
+    ctx.restore();
+};
+
+const useCapture = ({ isObsRecording, boxes }) => {
     const [devices, setDevices] = useState({ cameras: [], mics: [] });
 
     const [streams, setStreams] = useState({
@@ -56,10 +95,13 @@ const useCapture = ({ isObsRecording }) => {
     const chunksRef    = useRef([]);
     const timerRef     = useRef(null);
     const discardRef   = useRef(false);
+    const rafRef       = useRef(null);
     const streamsRef   = useRef(streams);
     const screensRef   = useRef(screens);
+    const boxesRef     = useRef(boxes);
     streamsRef.current = streams;
     screensRef.current = screens;
+    boxesRef.current   = boxes;
 
     // ── Device enumeration ────────────────────────────────────────────────────
     const enumerateDevices = useCallback(async () => {
@@ -115,7 +157,6 @@ const useCapture = ({ isObsRecording }) => {
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: HIGH_QUALITY_VIDEO,
-                // Ask for audio during the initial share so recording can reuse it.
                 audio: true,
                 selfBrowserSurface: 'exclude',
             });
@@ -161,8 +202,7 @@ const useCapture = ({ isObsRecording }) => {
 
     const stopMicCapture = useCallback(() => stopStream('mic'), []); // eslint-disable-line
 
-    // Recording the composed overlay requires capturing this browser tab. Reusing
-    // the raw display stream would miss the camera boxes and React components.
+    // ── Timer ─────────────────────────────────────────────────────────────────
     const startTimer = () => {
         clearInterval(timerRef.current);
         timerRef.current = setInterval(() =>
@@ -174,6 +214,9 @@ const useCapture = ({ isObsRecording }) => {
         timerRef.current = null;
     };
 
+    // ── Tab capture recording ─────────────────────────────────────────────────
+    // Captures this overlay tab exactly as rendered — screen boxes, camera boxes,
+    // and all UI elements (tasks, social feed, etc.) composited by the browser.
     const startRecording = useCallback(async () => {
         if (isObsRecording || recorderRef.current) return;
 
@@ -188,11 +231,12 @@ const useCapture = ({ isObsRecording }) => {
                 selfBrowserSurface: 'include',
             });
 
+            // Mix in mic if active
             const micStream = streamsRef.current.mic;
             if (micStream) {
-                micStream.getAudioTracks().forEach(t => {
-                    if (t.readyState !== 'ended') tabStream.addTrack(t);
-                });
+                micStream.getAudioTracks()
+                    .filter(t => t.readyState !== 'ended')
+                    .forEach(t => tabStream.addTrack(t));
             }
 
             const mimeType = getMimeType();
@@ -201,19 +245,25 @@ const useCapture = ({ isObsRecording }) => {
                 videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
             });
 
-            chunksRef.current = [];
+            chunksRef.current  = [];
             discardRef.current = false;
-            recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
+
+            recorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunksRef.current.push(e.data);
+            };
+
             recorder.onstop = () => {
                 stopTimer();
                 tabStream.getTracks().forEach(t => t.stop());
-                const blob = discardRef.current ? null : new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
+                const blob = discardRef.current
+                    ? null
+                    : new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
                 setRecording(r => ({ ...r, active: false, paused: false, blob, error: null }));
                 recorderRef.current = null;
-                discardRef.current = false;
+                discardRef.current  = false;
             };
 
-            // Auto-stop if user clicks "Stop sharing" in the browser bar
+            // Auto-stop when user clicks "Stop sharing" in the browser bar
             tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
                 stopTimer();
                 if (recorderRef.current && recorderRef.current.state !== 'inactive') {
@@ -224,8 +274,8 @@ const useCapture = ({ isObsRecording }) => {
             recorder.start(1000);
             recorderRef.current = recorder;
             startTimer();
+            setRecording({ active: true, paused: false, elapsed: 0, blob: null, error: null });
 
-            setRecording({ active: true, paused: false, elapsed: 0, blob: null, error: null, sourceLabel: 'Overlay tab' });
         } catch (e) {
             if (e.name !== 'NotAllowedError') {
                 console.error('Recording failed:', e);
@@ -259,6 +309,8 @@ const useCapture = ({ isObsRecording }) => {
         if (recorderRef.current && recorderRef.current.state !== 'inactive') {
             recorderRef.current.stop();
         } else {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
             setRecording({ active: false, paused: false, elapsed: 0, blob: null, error: null });
         }
         stopTimer();
@@ -286,6 +338,7 @@ const useCapture = ({ isObsRecording }) => {
         CAMERA_SLOTS.concat('mic').forEach(key => streamsRef.current[key]?.getTracks().forEach(t => t.stop()));
         screensRef.current.forEach(s => s.stream?.getTracks().forEach(t => t.stop()));
         try { recorderRef.current?.stop(); } catch (_) {}
+        cancelAnimationFrame(rafRef.current);
         clearInterval(timerRef.current);
     }, []);
 

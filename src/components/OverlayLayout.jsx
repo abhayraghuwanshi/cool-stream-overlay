@@ -435,8 +435,8 @@ const OverlayLayout = () => {
         setSelectedElementId(null);
         setShowBgPanel(false);
         await new Promise(r => setTimeout(r, 120));
-        startRecording();
-    }, [canStartRecording, startRecording]);
+        startRecording({ background, zOrder });
+    }, [canStartRecording, startRecording, background, zOrder]);
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
