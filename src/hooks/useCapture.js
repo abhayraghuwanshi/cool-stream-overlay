@@ -15,6 +15,13 @@ const getMimeType = () => {
     return types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
 };
 
+const HIGH_QUALITY_VIDEO = {
+    frameRate: { ideal: 60 },
+};
+
+// 12 Mbps — matches OBS "high quality" preset; Windows Chrome defaults ~2.5 Mbps without this
+const VIDEO_BITS_PER_SECOND = 12_000_000;
+
 const useCapture = ({ isObsRecording }) => {
     const [devices, setDevices] = useState({ cameras: [], mics: [] });
 
@@ -99,7 +106,7 @@ const useCapture = ({ isObsRecording }) => {
 
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
-                video: { frameRate: { ideal: 30 } },
+                video: HIGH_QUALITY_VIDEO,
                 // Ask for audio during the initial share so recording can reuse it.
                 audio: true,
                 selfBrowserSurface: 'exclude',
@@ -166,7 +173,7 @@ const useCapture = ({ isObsRecording }) => {
             const tabStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
                     displaySurface: 'browser',
-                    frameRate: { ideal: 30 },
+                    ...HIGH_QUALITY_VIDEO,
                 },
                 audio: true,
                 preferCurrentTab: true,
@@ -181,7 +188,10 @@ const useCapture = ({ isObsRecording }) => {
             }
 
             const mimeType = getMimeType();
-            const recorder = new MediaRecorder(tabStream, mimeType ? { mimeType } : {});
+            const recorder = new MediaRecorder(tabStream, {
+                ...(mimeType ? { mimeType } : {}),
+                videoBitsPerSecond: VIDEO_BITS_PER_SECOND,
+            });
 
             chunksRef.current = [];
             discardRef.current = false;
