@@ -11,7 +11,15 @@ const MAX_SCREENS  = 4;
 const CAMERA_SLOTS = ['faceCam', 'handCam', 'roomCam'];
 
 const getMimeType = () => {
-    const types = ['video/webm;codecs=vp9,opus', 'video/webm;codecs=vp8,opus', 'video/webm'];
+    // H.264 is hardware-accelerated on Windows GPU — much sharper than VP9 software encode.
+    // mp4 container works in Chrome 108+; fall back to webm h264, then vp9.
+    const types = [
+        'video/mp4;codecs=avc1.640028,mp4a.40.2',
+        'video/webm;codecs=h264,opus',
+        'video/webm;codecs=vp9,opus',
+        'video/webm;codecs=vp8,opus',
+        'video/webm',
+    ];
     return types.find(t => MediaRecorder.isTypeSupported(t)) ?? '';
 };
 
@@ -19,8 +27,8 @@ const HIGH_QUALITY_VIDEO = {
     frameRate: { ideal: 60 },
 };
 
-// 12 Mbps — matches OBS "high quality" preset; Windows Chrome defaults ~2.5 Mbps without this
-const VIDEO_BITS_PER_SECOND = 12_000_000;
+// 20 Mbps — headroom for 1080p motion; H.264 hardware encoder handles this easily
+const VIDEO_BITS_PER_SECOND = 20_000_000;
 
 const useCapture = ({ isObsRecording }) => {
     const [devices, setDevices] = useState({ cameras: [], mics: [] });
@@ -264,7 +272,8 @@ const useCapture = ({ isObsRecording }) => {
     const downloadRecording = useCallback((blob) => {
         if (!blob) return;
         const url = URL.createObjectURL(blob);
-        const a   = Object.assign(document.createElement('a'), { href: url, download: `capture-${Date.now()}.webm` });
+        const ext = blob.type.includes('mp4') ? 'mp4' : 'webm';
+        const a   = Object.assign(document.createElement('a'), { href: url, download: `capture-${Date.now()}.${ext}` });
         a.click();
         URL.revokeObjectURL(url);
     }, []);

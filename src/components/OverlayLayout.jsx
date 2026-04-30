@@ -44,7 +44,7 @@ const ScreenCaptureBox = memo(
                 onBoxChange={onBoxChange} editMode={editMode} canvasRef={canvasRef}
                 extraStyle={extraStyle}
             >
-                <VideoFeed stream={sc.stream} label={sc.label} muted />
+                <VideoFeed stream={sc.stream} label={sc.label} muted fit="contain" />
             </DraggableBox>
         );
     },

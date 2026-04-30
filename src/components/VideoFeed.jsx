@@ -1,6 +1,6 @@
 import { memo, useEffect, useRef } from 'react';
 
-const VideoFeed = ({ stream, label, muted = true }) => {
+const VideoFeed = ({ stream, label, muted = true, fit = 'cover' }) => {
     const videoRef = useRef(null);
     const attachedStreamRef = useRef(null);
 
@@ -61,7 +61,7 @@ const VideoFeed = ({ stream, label, muted = true }) => {
                 playsInline
                 style={{
                     width: '100%', height: '100%',
-                    objectFit: 'cover', display: 'block',
+                    objectFit: fit, display: 'block',
                     visibility: stream ? 'visible' : 'hidden',
                 }}
             />
