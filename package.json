@@ -13,6 +13,7 @@
     "@tailwindcss/postcss": "^4.2.0",
     "autoprefixer": "^10.4.24",
     "framer-motion": "^12.34.2",
+    "jszip": "^3.10.1",
     "lucide-react": "^0.575.0",
     "obs-websocket-js": "^5.0.7",
     "postcss": "^8.5.6",

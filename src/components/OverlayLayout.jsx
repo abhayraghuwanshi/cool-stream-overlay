@@ -139,11 +139,13 @@ const OverlayLayout = () => {
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
+    const [recordMode, setRecordMode] = useState('single'); // 'single' | 'multi'
 
     const capture = useCapture({ isObsRecording: isRecording, boxes, canvasRef });
     const {
         streams, screens, addScreenCapture, removeScreenCapture, recording,
-        startRecording, stopRecording, pauseRecording, resumeRecording, discardRecording, clearRecording, downloadRecording,
+        startRecording, startMultiTrackRecording, stopRecording,
+        pauseRecording, resumeRecording, discardRecording, clearRecording, downloadRecording,
     } = capture;
     const canStartRecording = !isRecording;
 
@@ -428,15 +430,25 @@ const OverlayLayout = () => {
     // ── Recording — close all panels BEFORE the browser dialog appears ──────
     // Without this, the Capture panel stays visible during the picker and ends
     // up captured in the recording (infinity-mirror effect).
-    const handleStartRecording = useCallback(async () => {
-        if (!canStartRecording) return;
+    const closeEditPanels = useCallback(async () => {
         setEditMode(false);
         setSelectedBox(null);
         setSelectedElementId(null);
         setShowBgPanel(false);
         await new Promise(r => setTimeout(r, 120));
-        startRecording({ background, zOrder });
-    }, [canStartRecording, startRecording, background, zOrder]);
+    }, []);
+
+    const handleStartRecording = useCallback(async () => {
+        if (!canStartRecording) return;
+        await closeEditPanels();
+        startRecording();
+    }, [canStartRecording, startRecording, closeEditPanels]);
+
+    const handleStartMultiTrack = useCallback(async () => {
+        if (!canStartRecording) return;
+        await closeEditPanels();
+        startMultiTrackRecording({ background, zOrder, elements });
+    }, [canStartRecording, startMultiTrackRecording, closeEditPanels, background, zOrder, elements]);
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
@@ -525,14 +537,21 @@ const OverlayLayout = () => {
                                 onDiscard={discardRecording}
                             />
                         ) : (
-                            <button onClick={handleStartRecording} disabled={!canStartRecording} style={{ padding: '3px 10px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.25)', background: canStartRecording ? 'rgba(80,10,10,0.4)' : 'rgba(255,255,255,0.04)', color: canStartRecording ? '#fca5a5' : 'rgba(255,255,255,0.25)', cursor: canStartRecording ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'rgba(239,68,68,0.7)' }} />
-                                Record
-                            </button>
+                            <RecordModePill
+                                mode={recordMode}
+                                disabled={!canStartRecording}
+                                onSelect={(m) => {
+                                    setRecordMode(m);
+                                    if (m === 'multi') handleStartMultiTrack();
+                                    else handleStartRecording();
+                                }}
+                            />
                         )}
                         {recording?.blob && !recording?.active && (
                             <>
-                                <HdrBtn onClick={() => downloadRecording(recording.blob)}>↓ Save</HdrBtn>
+                                <HdrBtn onClick={() => downloadRecording(recording.blob)}>
+                                    {recording.mode === 'multi' ? '↓ Save ZIP' : '↓ Save'}
+                                </HdrBtn>
                                 <HdrBtn onClick={clearRecording}>New</HdrBtn>
                             </>
                         )}
@@ -638,7 +657,7 @@ const OverlayLayout = () => {
                 display: inEditor ? 'flex' : 'block',
                 alignItems: 'center',
                 justifyContent: 'center',
-                padding: inEditor ? 14 : 0,
+                padding: inEditor ? '14px 0' : 0,
                 boxSizing: 'border-box',
                 ...(inEditor ? editorWorkspaceBg : { background: 'transparent' }),
             }}>
@@ -666,8 +685,8 @@ const OverlayLayout = () => {
                     style={{
                         ...(inEditor ? {
                             position: 'relative',
-                            width:  `min(calc(100vw - ${selectedElement ? 514 : 268}px), calc((100vh - 68px) * 16 / 9))`,
-                            height: `min(calc(100vh - 68px), calc((100vw - ${selectedElement ? 514 : 268}px) * 9 / 16))`,
+                            width:  `min(calc(100vw - ${selectedElement ? 500 : 240}px), calc((100vh - 68px) * 16 / 9))`,
+                            height: `min(calc(100vh - 68px), calc((100vw - ${selectedElement ? 500 : 240}px) * 9 / 16))`,
                             flexShrink: 0,
                         } : {
                             position: 'absolute',
@@ -725,9 +744,27 @@ const OverlayLayout = () => {
                                 onDiscard={discardRecording}
                             />
                         ) : (
-                            <DockBtn rec onClick={handleStartRecording} disabled={!canStartRecording}>● Rec</DockBtn>
+                            <RecordModePill
+                                mode={recordMode}
+                                disabled={!canStartRecording}
+                                onSelect={(m) => {
+                                    setRecordMode(m);
+                                    if (m === 'multi') handleStartMultiTrack();
+                                    else handleStartRecording();
+                                }}
+                            />
                         )}
-                        {recording?.blob && !recording?.active && (<><DockSep /><DockBtn onClick={() => downloadRecording(recording.blob)}>↓ Save</DockBtn><DockBtn onClick={clearRecording}>New</DockBtn></>)}
+                        {recording?.blob && !recording?.active && (
+                            <><DockSep />
+                            <button
+                                onClick={() => downloadRecording(recording.blob)}
+                                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(16,185,129,0.45)', background: 'rgba(6,78,59,0.55)', color: '#6ee7b7', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
+                                <span>↓</span> {recording.mode === 'multi' ? 'Export ZIP' : 'Export'}
+                            </button>
+                            <button onClick={clearRecording} style={{ padding: '4px 8px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(255,255,255,0.07)', background: 'transparent', color: 'rgba(255,255,255,0.3)', cursor: 'pointer' }}>
+                                Discard
+                            </button></>
+                        )}
                         <DockSep />
                         <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 4px 4px 2px' }}>
                             <div style={{ width: 5, height: 5, borderRadius: '50%', background: isConnected ? '#22c55e' : 'rgba(255,80,80,0.5)', boxShadow: isConnected ? '0 0 5px rgba(34,197,94,0.75)' : 'none' }} />
@@ -740,17 +777,84 @@ const OverlayLayout = () => {
     );
 };
 
+// Segmented toggle pill — clicking a segment selects that mode and starts recording.
+// The last-used mode stays highlighted so repeat recordings need only one click.
+const RecordModePill = ({ mode, disabled, onSelect }) => {
+    const seg = (m, label, dot, activeBg, activeBorder, activeColor, dotColor) => (
+        <button
+            onClick={() => !disabled && onSelect(m)}
+            disabled={disabled}
+            style={{
+                padding: '4px 10px',
+                fontSize: 9,
+                fontFamily: 'monospace',
+                textTransform: 'uppercase',
+                letterSpacing: 1,
+                border: 'none',
+                outline: 'none',
+                cursor: disabled ? 'not-allowed' : 'pointer',
+                display: 'flex', alignItems: 'center', gap: 5,
+                transition: 'background 0.15s, color 0.15s',
+                background: mode === m ? activeBg   : 'rgba(255,255,255,0.04)',
+                color:      mode === m ? activeColor : 'rgba(255,255,255,0.3)',
+                lineHeight: 1,
+            }}
+        >
+            <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: mode === m ? dotColor : 'rgba(255,255,255,0.18)',
+                boxShadow:  mode === m ? `0 0 5px ${dotColor}` : 'none',
+                transition: 'background 0.15s',
+            }} />
+            {label}
+        </button>
+    );
+
+    return (
+        <div style={{
+            display: 'flex',
+            borderRadius: 8,
+            border: `1px solid ${mode === 'multi' ? 'rgba(168,85,247,0.3)' : 'rgba(239,68,68,0.25)'}`,
+            overflow: 'hidden',
+            opacity: disabled ? 0.45 : 1,
+            transition: 'border-color 0.2s',
+        }}>
+            {seg('single', 'Rec',   true,  'rgba(100,20,20,0.6)',  '', '#fca5a5', '#ef4444')}
+            <div style={{ width: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+            {seg('multi',  'Multi', false, 'rgba(60,10,80,0.65)',  '', '#d8b4fe', '#a855f7')}
+        </div>
+    );
+};
+
 const RecordingControls = ({ recording, onPause, onResume, onSave, onDiscard }) => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        <button onClick={recording.paused ? onResume : onPause} style={{ padding: '4px 8px', borderRadius: 7, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(99,102,241,0.35)', background: 'rgba(79,70,229,0.38)', color: '#c7d2fe', cursor: 'pointer' }}>
-            {recording.paused ? 'Resume' : 'Pause'}
+        {/* Pulsing indicator + elapsed */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: recording.paused ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${recording.paused ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
+            <span style={{
+                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
+                background: recording.paused ? '#f59e0b' : '#ef4444',
+                boxShadow: recording.paused ? 'none' : '0 0 6px rgba(239,68,68,0.9)',
+                animation: recording.paused ? 'none' : 'pulse 1.2s ease-in-out infinite',
+            }} />
+            <span style={{ fontSize: 9, fontFamily: 'monospace', letterSpacing: 1, color: recording.paused ? '#fcd34d' : '#fca5a5' }}>
+                {recording.paused ? 'PAUSED' : recording.mode === 'multi' ? 'MULTI' : 'REC'}
+            </span>
+            <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)', minWidth: 44, textAlign: 'right' }}>
+                {formatElapsed(recording.elapsed)}
+            </span>
+        </div>
+        <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.07)', margin: '0 1px', flexShrink: 0 }} />
+        {/* Pause / Resume */}
+        <button onClick={recording.paused ? onResume : onPause} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(99,102,241,0.35)', background: 'rgba(79,70,229,0.3)', color: '#c7d2fe', cursor: 'pointer' }}>
+            {recording.paused ? '▶ Resume' : '⏸ Pause'}
         </button>
-        <button onClick={onSave} style={{ padding: '4px 8px', borderRadius: 7, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(6,78,59,0.38)', color: '#6ee7b7', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: recording.paused ? '#f59e0b' : '#ef4444', boxShadow: recording.paused ? 'none' : '0 0 6px rgba(239,68,68,0.9)' }} />
-            {formatElapsed(recording.elapsed)}
+        {/* Stop & Save */}
+        <button onClick={onSave} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(6,78,59,0.38)', color: '#6ee7b7', cursor: 'pointer' }}>
+            ■ Stop
         </button>
-        <button onClick={onDiscard} style={{ padding: '4px 8px', borderRadius: 7, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.38)', background: 'rgba(127,29,29,0.5)', color: '#fca5a5', cursor: 'pointer' }}>
-            Discard
+        {/* Discard */}
+        <button onClick={onDiscard} style={{ padding: '4px 7px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.25)', background: 'transparent', color: 'rgba(252,165,165,0.5)', cursor: 'pointer' }}>
+            ✕
         </button>
     </div>
 );
@@ -763,10 +867,11 @@ const HdrBtn = ({ children, active, icon, onClick }) => (
 
 const HdrSep = () => <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />;
 
-const DockBtn = ({ children, active, rec, icon, disabled, onClick }) => (
+const DockBtn = ({ children, active, rec, multi, icon, disabled, onClick, title }) => (
     <button
         onClick={onClick}
         disabled={disabled}
+        title={title}
         style={{
             padding: icon ? '4px 7px' : '4px 10px',
             borderRadius: 8,
@@ -782,9 +887,11 @@ const DockBtn = ({ children, active, rec, icon, disabled, onClick }) => (
             lineHeight: 1,
             ...(rec
                 ? { background: 'rgba(100,20,20,0.45)', borderColor: 'rgba(239,68,68,0.32)', color: '#fca5a5' }
-                : active
-                    ? { background: 'rgba(79,70,229,0.52)', borderColor: 'rgba(99,102,241,0.5)', color: '#fff' }
-                    : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)' }
+                : multi
+                    ? { background: 'rgba(60,10,80,0.5)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe' }
+                    : active
+                        ? { background: 'rgba(79,70,229,0.52)', borderColor: 'rgba(99,102,241,0.5)', color: '#fff' }
+                        : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)' }
             ),
         }}
     >
