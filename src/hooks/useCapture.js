@@ -32,7 +32,7 @@ const useCapture = ({ isObsRecording }) => {
         faceCam: null, handCam: null, roomCam: null, mic: null,
     });
 
-    const [recording, setRecording] = useState({ active: false, elapsed: 0, blob: null });
+    const [recording, setRecording] = useState({ active: false, paused: false, elapsed: 0, blob: null, error: null });
     const [errors, setErrors]       = useState({
         faceCam: null, handCam: null, roomCam: null, mic: null, screen: null,
     });
@@ -40,6 +40,7 @@ const useCapture = ({ isObsRecording }) => {
     const recorderRef  = useRef(null);
     const chunksRef    = useRef([]);
     const timerRef     = useRef(null);
+    const discardRef   = useRef(false);
     const streamsRef   = useRef(streams);
     const screensRef   = useRef(screens);
     streamsRef.current = streams;
@@ -99,8 +100,8 @@ const useCapture = ({ isObsRecording }) => {
         try {
             const stream = await navigator.mediaDevices.getDisplayMedia({
                 video: { frameRate: { ideal: 30 } },
-                // audio: false — omit audio so Chrome's autoplay policy never blocks
-                // the <video> element. Audio is captured separately during recording.
+                // Ask for audio during the initial share so recording can reuse it.
+                audio: true,
                 selfBrowserSurface: 'exclude',
             });
             const label  = `Screen ${slot + 1}`;
@@ -145,74 +146,109 @@ const useCapture = ({ isObsRecording }) => {
 
     const stopMicCapture = useCallback(() => stopStream('mic'), []); // eslint-disable-line
 
-    // ── Recording — captures the browser tab (full composited overlay) ────────
-    //
-    // We use getDisplayMedia to record the tab itself rather than trying to
-    // composite raw streams. This captures EVERYTHING: CSS, video feeds, overlays,
-    // background — exactly what the user sees.
-    //
-    // The caller (OverlayLayout) hides all UI panels before calling this so that
-    // the picker shows (and records) the clean overlay without any control chrome.
-    //
+    // Recording the composed overlay requires capturing this browser tab. Reusing
+    // the raw display stream would miss the camera boxes and React components.
+    const startTimer = () => {
+        clearInterval(timerRef.current);
+        timerRef.current = setInterval(() =>
+            setRecording(r => r.active && !r.paused ? { ...r, elapsed: r.elapsed + 1 } : r), 1000);
+    };
+
+    const stopTimer = () => {
+        clearInterval(timerRef.current);
+        timerRef.current = null;
+    };
+
     const startRecording = useCallback(async () => {
         if (isObsRecording || recorderRef.current) return;
 
         try {
             const tabStream = await navigator.mediaDevices.getDisplayMedia({
                 video: {
-                    displaySurface: 'browser', // start picker on the Tab panel
+                    displaySurface: 'browser',
                     frameRate: { ideal: 30 },
                 },
-                audio: true,               // capture tab audio (screen audio etc.)
-                preferCurrentTab: true,    // Chrome 107+: pre-select this tab
+                audio: true,
+                preferCurrentTab: true,
                 selfBrowserSurface: 'include',
             });
 
-            // Also mix in the microphone if one is active
             const micStream = streamsRef.current.mic;
             if (micStream) {
-                micStream.getAudioTracks().forEach(t => tabStream.addTrack(t));
+                micStream.getAudioTracks().forEach(t => {
+                    if (t.readyState !== 'ended') tabStream.addTrack(t);
+                });
             }
 
             const mimeType = getMimeType();
             const recorder = new MediaRecorder(tabStream, mimeType ? { mimeType } : {});
 
             chunksRef.current = [];
+            discardRef.current = false;
             recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
             recorder.onstop = () => {
+                stopTimer();
                 tabStream.getTracks().forEach(t => t.stop());
-                const blob = new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
-                setRecording(r => ({ ...r, active: false, blob }));
+                const blob = discardRef.current ? null : new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
+                setRecording(r => ({ ...r, active: false, paused: false, blob, error: null }));
                 recorderRef.current = null;
+                discardRef.current = false;
             };
 
             // Auto-stop if user clicks "Stop sharing" in the browser bar
-            tabStream.getVideoTracks()[0].onended = () => {
-                clearInterval(timerRef.current);
-                timerRef.current = null;
-                if (recorderRef.current?.state === 'recording') {
+            tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
+                stopTimer();
+                if (recorderRef.current && recorderRef.current.state !== 'inactive') {
                     recorderRef.current.stop();
                 }
-            };
+            }, { once: true });
 
             recorder.start(1000);
             recorderRef.current = recorder;
+            startTimer();
 
-            timerRef.current = setInterval(() =>
-                setRecording(r => ({ ...r, elapsed: r.elapsed + 1 })), 1000);
-
-            setRecording({ active: true, elapsed: 0, blob: null });
+            setRecording({ active: true, paused: false, elapsed: 0, blob: null, error: null, sourceLabel: 'Overlay tab' });
         } catch (e) {
             if (e.name !== 'NotAllowedError') {
-                console.error('Tab recording failed:', e);
+                console.error('Recording failed:', e);
+                setRecording(r => ({ ...r, error: e.message || 'Recording failed.' }));
             }
         }
     }, [isObsRecording]);
 
     const stopRecording = useCallback(() => {
-        recorderRef.current?.stop();
-        clearInterval(timerRef.current);
-        timerRef.current = null;
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') recorderRef.current.stop();
+        stopTimer();
+    }, []);
+
+    const pauseRecording = useCallback(() => {
+        if (recorderRef.current?.state !== 'recording') return;
+        recorderRef.current.pause();
+        stopTimer();
+        setRecording(r => ({ ...r, paused: true }));
+    }, []);
+
+    const resumeRecording = useCallback(() => {
+        if (recorderRef.current?.state !== 'paused') return;
+        recorderRef.current.resume();
+        startTimer();
+        setRecording(r => ({ ...r, paused: false }));
+    }, []);
+
+    const discardRecording = useCallback(() => {
+        discardRef.current = true;
+        chunksRef.current = [];
+        if (recorderRef.current && recorderRef.current.state !== 'inactive') {
+            recorderRef.current.stop();
+        } else {
+            setRecording({ active: false, paused: false, elapsed: 0, blob: null, error: null });
+        }
+        stopTimer();
+    }, []);
+
+    const clearRecording = useCallback(() => {
+        chunksRef.current = [];
+        setRecording({ active: false, paused: false, elapsed: 0, blob: null, error: null });
     }, []);
 
     const downloadRecording = useCallback((blob) => {
@@ -255,6 +291,10 @@ const useCapture = ({ isObsRecording }) => {
         recording,
         startRecording,
         stopRecording,
+        pauseRecording,
+        resumeRecording,
+        discardRecording,
+        clearRecording,
         downloadRecording,
     };
 };

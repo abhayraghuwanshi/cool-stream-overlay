@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { formatElapsed } from '../hooks/useCapture';
 
-// ── Shared helpers ────────────────────────────────────────────────────────────
+// -- Shared helpers ------------------------------------------------------------
 
 const SectionHeader = ({ label, badge }) => (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
@@ -65,7 +65,7 @@ const Btn = ({ onClick, active, danger, disabled, children }) => (
 
 const SCREEN_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'];
 
-// ── CapturePanel ──────────────────────────────────────────────────────────────
+// -- CapturePanel --------------------------------------------------------------
 
 const CapturePanel = ({ capture, isObsRecording, onClose }) => {
     const {
@@ -85,6 +85,10 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
         recording,
         startRecording,
         stopRecording,
+        pauseRecording,
+        resumeRecording,
+        discardRecording,
+        clearRecording,
         downloadRecording,
     } = capture;
 
@@ -129,13 +133,13 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                     Capture
                 </span>
                 <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', fontSize: 14, cursor: 'pointer', lineHeight: 1, padding: '0 2px' }}>
-                    ×
+                    x
                 </button>
             </div>
 
             <div style={{ padding: '10px 12px', display: 'flex', flexDirection: 'column', gap: 14 }}>
 
-                {/* ── Displays ── */}
+                {/* -- Displays -- */}
                 <div>
                     <SectionHeader label="Displays" badge={`${screenActive} active`} />
 
@@ -179,7 +183,7 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                         {!canAddScreen
                             ? 'Max 4 displays reached'
                             : screens.length === 0
-                                ? '+ Add Display  (picks primary, secondary…)'
+                                ? '+ Add Display  (picks primary, secondary...)'
                                 : `+ Add Another Display  (${screens.length}/4)`
                         }
                     </button>
@@ -189,11 +193,11 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                     )}
 
                     <div style={{ marginTop: 5, fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)', lineHeight: 1.5 }}>
-                        Each click opens the browser's source picker — choose a screen, window, or tab.
+                        Each click opens the browser's source picker - choose a screen, window, or tab.
                     </div>
                 </div>
 
-                {/* ── Cameras ── */}
+                {/* -- Cameras -- */}
                 <div>
                     <SectionHeader label="Cameras" />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 6 }}>
@@ -228,7 +232,7 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                     </div>
                 </div>
 
-                {/* ── Microphone ── */}
+                {/* -- Microphone -- */}
                 <div>
                     <SectionHeader label="Microphone" />
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -254,7 +258,7 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                     )}
                 </div>
 
-                {/* ── Recording ── */}
+                {/* -- Recording -- */}
                 <div style={{ borderTop: '1px solid rgba(255,255,255,0.1)', paddingTop: 12 }}>
                     <SectionHeader label="Recording" />
 
@@ -265,7 +269,7 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                             fontSize: 9, fontFamily: 'monospace', color: 'rgba(252,211,77,0.8)', lineHeight: 1.5,
                         }}>
                             <span style={{ display: 'inline-block', width: 6, height: 6, borderRadius: '50%', background: '#f59e0b', marginRight: 6, verticalAlign: 'middle' }} />
-                            OBS is recording — in-app recording disabled
+                            OBS is recording - in-app recording disabled
                         </div>
                     ) : (
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
@@ -274,9 +278,17 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                             </div>
 
                             {recording.active ? (
-                                <button onClick={stopRecording} style={{ width: '100%', padding: '6px 0', borderRadius: 8, fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(127,29,29,0.55)', border: '1px solid rgba(239,68,68,0.45)', color: '#fca5a5', cursor: 'pointer' }}>
-                                    ■ Stop Recording
-                                </button>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+                                    <button onClick={recording.paused ? resumeRecording : pauseRecording} style={{ padding: '6px 0', borderRadius: 8, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(79,70,229,0.4)', border: '1px solid rgba(99,102,241,0.4)', color: '#c7d2fe', cursor: 'pointer' }}>
+                                        {recording.paused ? 'Resume' : 'Pause'}
+                                    </button>
+                                    <button onClick={stopRecording} style={{ padding: '6px 0', borderRadius: 8, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(6,78,59,0.42)', border: '1px solid rgba(16,185,129,0.38)', color: '#6ee7b7', cursor: 'pointer' }}>
+                                        Save
+                                    </button>
+                                    <button onClick={discardRecording} style={{ padding: '6px 0', borderRadius: 8, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(127,29,29,0.55)', border: '1px solid rgba(239,68,68,0.45)', color: '#fca5a5', cursor: 'pointer' }}>
+                                        Discard
+                                    </button>
+                                </div>
                             ) : (
                                 <button onClick={startRecording} disabled={!canRecord} style={{ width: '100%', padding: '6px 0', borderRadius: 8, fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: canRecord ? 'rgba(79,70,229,0.55)' : 'rgba(255,255,255,0.04)', border: `1px solid ${canRecord ? 'rgba(99,102,241,0.45)' : 'rgba(255,255,255,0.08)'}`, color: canRecord ? '#fff' : 'rgba(255,255,255,0.25)', cursor: canRecord ? 'pointer' : 'not-allowed', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6 }}>
                                     <span style={{ width: 7, height: 7, borderRadius: '50%', background: canRecord ? '#ef4444' : 'rgba(255,255,255,0.2)', display: 'inline-block', boxShadow: canRecord ? '0 0 6px rgba(239,68,68,0.6)' : 'none' }} />
@@ -285,13 +297,24 @@ const CapturePanel = ({ capture, isObsRecording, onClose }) => {
                             )}
 
                             {recording.blob && !recording.active && (
-                                <button onClick={() => downloadRecording(recording.blob)} style={{ width: '100%', padding: '6px 0', borderRadius: 8, fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(6,78,59,0.45)', border: '1px solid rgba(16,185,129,0.4)', color: '#6ee7b7', cursor: 'pointer' }}>
-                                    ↓ Download WebM
-                                </button>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 6 }}>
+                                    <button onClick={() => downloadRecording(recording.blob)} style={{ padding: '6px 0', borderRadius: 8, fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(6,78,59,0.45)', border: '1px solid rgba(16,185,129,0.4)', color: '#6ee7b7', cursor: 'pointer' }}>
+                                        Save WebM
+                                    </button>
+                                    <button onClick={clearRecording} style={{ padding: '6px 0', borderRadius: 8, fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.12)', color: 'rgba(255,255,255,0.55)', cursor: 'pointer' }}>
+                                        New
+                                    </button>
+                                </div>
+                            )}
+
+                            {recording.error && (
+                                <div style={{ textAlign: 'center', fontSize: 8, fontFamily: 'monospace', color: '#f87171' }}>
+                                    {recording.error}
+                                </div>
                             )}
 
                             <div style={{ textAlign: 'center', fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.25)' }}>
-                                {screenActive} display{screenActive !== 1 ? 's' : ''} · {camActive} cam{camActive !== 1 ? 's' : ''} · {streams.mic ? 'mic on' : 'no mic'}
+                                {screenActive} display{screenActive !== 1 ? 's' : ''} - {camActive} cam{camActive !== 1 ? 's' : ''} - {streams.mic ? 'mic on' : 'no mic'}
                             </div>
                         </div>
                     )}
