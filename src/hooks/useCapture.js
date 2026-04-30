@@ -202,8 +202,12 @@ const useCapture = ({ isObsRecording, boxes }) => {
         timerRef.current = null;
     };
 
-    // ── Single-track recording (tab capture — full overlay as seen on screen) ─
-    const startRecording = useCallback(async () => {
+    // ── Single-track recording ────────────────────────────────────────────────
+    // Uses Element Capture (Chrome 132+) when available: captures only the
+    // overlay canvas div — no browser chrome, no "Sharing this tab" banner, no
+    // infinity-mirror from screen sources (they use selfBrowserSurface:'exclude').
+    // Falls back to plain tab capture on older browsers.
+    const startRecording = useCallback(async ({ canvasEl } = {}) => {
         if (isObsRecording || recorderRef.current) return;
 
         try {
@@ -213,6 +217,14 @@ const useCapture = ({ isObsRecording, boxes }) => {
                 preferCurrentTab: true,
                 selfBrowserSurface: 'include',
             });
+
+            // Restrict to the canvas element if Element Capture is supported
+            if (canvasEl && typeof RestrictionTarget !== 'undefined' && RestrictionTarget.fromElement) {
+                try {
+                    const target = await RestrictionTarget.fromElement(canvasEl);
+                    await tabStream.getVideoTracks()[0].restrictTo(target);
+                } catch (_) { /* fall back to full tab capture */ }
+            }
 
             const micStream = streamsRef.current.mic;
             if (micStream) {
@@ -260,7 +272,7 @@ const useCapture = ({ isObsRecording, boxes }) => {
     // ── Multi-track recording ─────────────────────────────────────────────────
     // Records every active source as its own file PLUS the full composited tab.
     // On stop, bundles everything into a ZIP with a manifest.json for re-editing.
-    const startMultiTrackRecording = useCallback(async ({ background, zOrder, elements } = {}) => {
+    const startMultiTrackRecording = useCallback(async ({ background, zOrder, elements, canvasEl } = {}) => {
         if (isObsRecording || recorderRef.current) return;
 
         try {
@@ -269,13 +281,20 @@ const useCapture = ({ isObsRecording, boxes }) => {
             const currentBoxes   = boxesRef.current ?? {};
             const startTime      = Date.now();
 
-            // ── Capture composite tab ────────────────────────────────────────
+            // ── Composite tab capture (with Element Capture restriction) ─────
             const tabStream = await navigator.mediaDevices.getDisplayMedia({
                 video: { displaySurface: 'browser', ...HIGH_QUALITY_VIDEO },
                 audio: true,
                 preferCurrentTab: true,
                 selfBrowserSurface: 'include',
             });
+
+            if (canvasEl && typeof RestrictionTarget !== 'undefined' && RestrictionTarget.fromElement) {
+                try {
+                    const target = await RestrictionTarget.fromElement(canvasEl);
+                    await tabStream.getVideoTracks()[0].restrictTo(target);
+                } catch (_) {}
+            }
 
             if (currentStreams.mic) {
                 currentStreams.mic.getAudioTracks()

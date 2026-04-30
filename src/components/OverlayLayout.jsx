@@ -441,13 +441,13 @@ const OverlayLayout = () => {
     const handleStartRecording = useCallback(async () => {
         if (!canStartRecording) return;
         await closeEditPanels();
-        startRecording();
+        startRecording({ canvasEl: canvasRef.current });
     }, [canStartRecording, startRecording, closeEditPanels]);
 
     const handleStartMultiTrack = useCallback(async () => {
         if (!canStartRecording) return;
         await closeEditPanels();
-        startMultiTrackRecording({ background, zOrder, elements });
+        startMultiTrackRecording({ background, zOrder, elements, canvasEl: canvasRef.current });
     }, [canStartRecording, startMultiTrackRecording, closeEditPanels, background, zOrder, elements]);
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
@@ -683,6 +683,7 @@ const OverlayLayout = () => {
                     onMouseDown={onCanvasMouseDown}
                     className={`font-inter overflow-hidden ${isRecording ? 'outline outline-4 outline-red-500/50' : ''}`}
                     style={{
+                        isolation: 'isolate', // required for Element Capture (RestrictionTarget)
                         ...(inEditor ? {
                             position: 'relative',
                             width:  `min(calc(100vw - ${selectedElement ? 500 : 240}px), calc((100vh - 68px) * 16 / 9))`,
