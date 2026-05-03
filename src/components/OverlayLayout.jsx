@@ -23,7 +23,7 @@ const DEFAULT_BOXES = {
     currentTask: { x: 0, y: 85, w: 80, h: 15 },
 };
 
-const DEFAULT_SCREEN_BOX = { x: 0, y: 0, w: 79, h: 84 };
+const DEFAULT_SCREEN_BOX = { x: 0, y: 0, w: 100, h: 100 };
 
 const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
@@ -438,17 +438,26 @@ const OverlayLayout = () => {
         await new Promise(r => setTimeout(r, 120));
     }, []);
 
+    const collectVideoEls = useCallback(() => {
+        const videoEls = {};
+        canvasRef.current?.querySelectorAll('[data-box-id]').forEach(el => {
+            const video = el.querySelector('video');
+            if (video) videoEls[el.dataset.boxId] = video;
+        });
+        return videoEls;
+    }, []);
+
     const handleStartRecording = useCallback(async () => {
         if (!canStartRecording) return;
         await closeEditPanels();
-        startRecording({ canvasEl: canvasRef.current });
-    }, [canStartRecording, startRecording, closeEditPanels]);
+        startRecording({ background, zOrder, elements, videoEls: collectVideoEls() });
+    }, [canStartRecording, startRecording, closeEditPanels, background, zOrder, elements, collectVideoEls]);
 
     const handleStartMultiTrack = useCallback(async () => {
         if (!canStartRecording) return;
         await closeEditPanels();
-        startMultiTrackRecording({ background, zOrder, elements, canvasEl: canvasRef.current });
-    }, [canStartRecording, startMultiTrackRecording, closeEditPanels, background, zOrder, elements]);
+        startMultiTrackRecording({ background, zOrder, elements, videoEls: collectVideoEls() });
+    }, [canStartRecording, startMultiTrackRecording, closeEditPanels, background, zOrder, elements, collectVideoEls]);
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);

@@ -61,14 +61,14 @@ const DraggableBox = ({
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const { offsetWidth: W, offsetHeight: H } = canvas;
         const el = elRef.current;
-        const b  = boxRef.current;
 
         const startMouseX = e.clientX;
         const startMouseY = e.clientY;
-        const startLeft   = (b.x / 100) * W;
-        const startTop    = (b.y / 100) * H;
+        const canvasRect  = canvas.getBoundingClientRect();
+        const elRect      = el.getBoundingClientRect();
+        const startLeft   = elRect.left - canvasRect.left;
+        const startTop    = elRect.top  - canvasRect.top;
 
         const onMove = (ev) => {
             const dx = ev.clientX - startMouseX;
@@ -76,20 +76,22 @@ const DraggableBox = ({
             // Only start dragging after the mouse moves beyond the dead-zone
             if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
-            el.style.left = `${clamp(startLeft + dx, 0, W - el.offsetWidth)}px`;
-            el.style.top  = `${clamp(startTop  + dy, 0, H - el.offsetHeight)}px`;
+            el.style.left = `${startLeft + dx}px`;
+            el.style.top  = `${startTop  + dy}px`;
         };
 
-        const onUp = (ev) => {
+        const onUp = () => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup',   onUp);
             anyDragging = false;
             if (didDrag.current) {
-                const dx = ev.clientX - startMouseX;
-                const dy = ev.clientY - startMouseY;
-                const newLeft = clamp(startLeft + dx, 0, W - el.offsetWidth);
-                const newTop  = clamp(startTop  + dy, 0, H - el.offsetHeight);
-                onBoxChange(id, { ...boxRef.current, x: (newLeft / W) * 100, y: (newTop / H) * 100 });
+                const rect  = el.getBoundingClientRect();
+                const pRect = canvas.getBoundingClientRect();
+                onBoxChange(id, {
+                    ...boxRef.current,
+                    x: ((rect.left - pRect.left) / canvas.offsetWidth)  * 100,
+                    y: ((rect.top  - pRect.top)  / canvas.offsetHeight) * 100,
+                });
             }
         };
 
@@ -169,6 +171,7 @@ const DraggableBox = ({
     return (
         <div
             ref={elRef}
+            data-box-id={id}
             onMouseDown={onRootMouseDown}
             onClick={onRootClick}
             onMouseEnter={() => { if (!anyDragging) setHovered(true);  }}

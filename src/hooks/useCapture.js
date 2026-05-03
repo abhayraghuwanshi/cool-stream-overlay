@@ -202,185 +202,147 @@ const useCapture = ({ isObsRecording, boxes }) => {
         timerRef.current = null;
     };
 
-    // ── Single-track recording ────────────────────────────────────────────────
-    // Uses Element Capture (Chrome 132+) when available: captures only the
-    // overlay canvas div — no browser chrome, no "Sharing this tab" banner, no
-    // infinity-mirror from screen sources (they use selfBrowserSurface:'exclude').
-    // Falls back to plain tab capture on older browsers.
-    const startRecording = useCallback(async ({ canvasEl } = {}) => {
-        if (isObsRecording || recorderRef.current) return;
+    // ── Canvas composite from existing live video elements ────────────────────
+    // videoEls: { boxId → <video> } queried from the overlay canvas before record.
+    // These elements are already decoded and rendering — drawImage works reliably.
+    // No getDisplayMedia needed → no sharing dialog, no green bar, no banner.
+    const buildCompositeStream = ({ background, zOrder = [], elements = [], videoEls = {} } = {}) => {
+        const W = 1920, H = 1080;
+        const canvas = document.createElement('canvas');
+        canvas.width = W; canvas.height = H;
+        canvas.style.cssText = 'position:fixed;top:0;left:0;opacity:0.001;pointer-events:none;z-index:-9999;';
+        document.body.appendChild(canvas);
+        const ctx = canvas.getContext('2d', { alpha: false });
 
+        const drawVid = (id) => {
+            const vid = videoEls[id]; const box = boxesRef.current[id];
+            if (!vid || !box) return;
+            try { ctx.drawImage(vid, (box.x/100)*W, (box.y/100)*H, (box.w/100)*W, (box.h/100)*H); } catch (_) {}
+        };
+
+        const drawCustomEl = (el) => {
+            if (el.hidden || !el.box) return;
+            const bx=(el.box.x/100)*W, by=(el.box.y/100)*H, bw=(el.box.w/100)*W, bh=(el.box.h/100)*H;
+            ctx.save(); ctx.fillStyle=el.color??'#fff'; ctx.textAlign='center'; ctx.textBaseline='middle';
+            if (el.type==='clock') { ctx.font=`bold ${Math.round(bh*0.5)}px monospace`; ctx.fillText(new Date().toLocaleTimeString(),bx+bw/2,by+bh/2); }
+            else if (el.type==='text') { ctx.font=`${Math.round(bh*0.5)}px sans-serif`; ctx.fillText(el.text??'',bx+bw/2,by+bh/2); }
+            ctx.restore();
+        };
+
+        const stream = canvas.captureStream(30);
+
+        let rafId;
+        const paint = () => {
+            const bg = background;
+            if (!bg||bg.type==='transparent') { ctx.clearRect(0,0,W,H); }
+            else if (bg.type==='gradient') {
+                const angle=(parseFloat(bg.dir)||135)*Math.PI/180, len=Math.hypot(W,H);
+                const g=ctx.createLinearGradient(W/2-Math.cos(angle)*len/2,H/2-Math.sin(angle)*len/2,W/2+Math.cos(angle)*len/2,H/2+Math.sin(angle)*len/2);
+                g.addColorStop(0,bg.from); g.addColorStop(1,bg.to); ctx.fillStyle=g; ctx.fillRect(0,0,W,H);
+            } else { ctx.fillStyle=bg.color??'#0a0a0f'; ctx.fillRect(0,0,W,H); }
+            const order = zOrder.length ? zOrder : Object.keys(boxesRef.current);
+            for (const id of order) drawVid(id);
+            for (const el of elements) drawCustomEl(el);
+            rafId = requestAnimationFrame(paint);
+        };
+        paint();
+
+        // Mix audio: mic + any screen-capture audio
         try {
-            const tabStream = await navigator.mediaDevices.getDisplayMedia({
-                video: { displaySurface: 'browser', ...HIGH_QUALITY_VIDEO },
-                audio: true,
-                preferCurrentTab: true,
-                selfBrowserSurface: 'include',
-            });
-
-            // Restrict to the canvas element if Element Capture is supported
-            if (canvasEl && typeof RestrictionTarget !== 'undefined' && RestrictionTarget.fromElement) {
-                try {
-                    const target = await RestrictionTarget.fromElement(canvasEl);
-                    await tabStream.getVideoTracks()[0].restrictTo(target);
-                } catch (_) { /* fall back to full tab capture */ }
-            }
-
-            const micStream = streamsRef.current.mic;
-            if (micStream) {
-                micStream.getAudioTracks()
-                    .filter(t => t.readyState !== 'ended')
-                    .forEach(t => tabStream.addTrack(t));
-            }
-
-            const mimeType = getMimeTypeForStream(tabStream);
-            const recorder = makeRecorder(tabStream, mimeType);
-
-            chunksRef.current  = [];
-            discardRef.current = false;
-
-            recorder.ondataavailable = (e) => { if (e.data.size > 0) chunksRef.current.push(e.data); };
-            recorder.onstop = () => {
-                stopTimer();
-                tabStream.getTracks().forEach(t => t.stop());
-                const blob = discardRef.current
-                    ? null
-                    : new Blob(chunksRef.current, { type: mimeType || 'video/webm' });
-                setRecording(r => ({ ...r, active: false, paused: false, blob, error: null }));
-                recorderRef.current = null;
-                discardRef.current  = false;
+            const actx = new AudioContext();
+            const dest = actx.createMediaStreamDestination();
+            let hasAudio = false;
+            const addAudio = (s) => {
+                const alive = s.getAudioTracks().filter(t=>t.readyState!=='ended');
+                if (!alive.length) return;
+                actx.createMediaStreamSource(new MediaStream(alive)).connect(dest);
+                hasAudio = true;
             };
+            const cur = streamsRef.current;
+            if (cur.mic) addAudio(cur.mic);
+            for (const sc of screensRef.current) addAudio(sc.stream);
+            if (hasAudio) dest.stream.getAudioTracks().forEach(t=>stream.addTrack(t));
+        } catch (_) {}
 
-            tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-                stopTimer();
-                if (recorderRef.current?.state !== 'inactive') recorderRef.current.stop();
-            }, { once: true });
+        const stop = () => { cancelAnimationFrame(rafId); canvas.remove(); stream.getTracks().forEach(t=>t.stop()); };
+        return { stream, stop };
+    };
 
+    // ── Single-track recording ────────────────────────────────────────────────
+    const startRecording = useCallback(async ({ background, zOrder, elements, videoEls = {} } = {}) => {
+        if (isObsRecording || recorderRef.current) return;
+        try {
+            const { stream, stop: stopComposite } = buildCompositeStream({ background, zOrder, elements, videoEls });
+            const mimeType = getMimeTypeForStream(stream);
+            const recorder = makeRecorder(stream, mimeType);
+            chunksRef.current = []; discardRef.current = false;
+            recorder.ondataavailable = (e) => { if (e.data.size>0) chunksRef.current.push(e.data); };
+            recorder.onstop = () => {
+                stopTimer(); stopComposite();
+                const blob = discardRef.current ? null : new Blob(chunksRef.current, { type: mimeType||'video/webm' });
+                setRecording(r => ({ ...r, active: false, paused: false, blob, error: null }));
+                recorderRef.current = null; discardRef.current = false;
+            };
             recorder.start(1000);
             recorderRef.current = recorder;
             startTimer();
             setRecording({ active: true, paused: false, elapsed: 0, blob: null, error: null, mode: 'single' });
-
         } catch (e) {
-            if (e.name !== 'NotAllowedError') {
-                console.error('Recording failed:', e);
-                setRecording(r => ({ ...r, error: e.message || 'Recording failed.' }));
-            }
+            console.error('Recording failed:', e);
+            setRecording(r => ({ ...r, error: e.message||'Recording failed.' }));
         }
-    }, [isObsRecording]);
+    }, [isObsRecording]); // eslint-disable-line react-hooks/exhaustive-deps
 
     // ── Multi-track recording ─────────────────────────────────────────────────
-    // Records every active source as its own file PLUS the full composited tab.
-    // On stop, bundles everything into a ZIP with a manifest.json for re-editing.
-    const startMultiTrackRecording = useCallback(async ({ background, zOrder, elements, canvasEl } = {}) => {
+    const startMultiTrackRecording = useCallback(async ({ background, zOrder, elements, videoEls = {} } = {}) => {
         if (isObsRecording || recorderRef.current) return;
-
         try {
             const currentScreens = screensRef.current;
             const currentStreams  = streamsRef.current;
             const currentBoxes   = boxesRef.current ?? {};
             const startTime      = Date.now();
 
-            // ── Composite tab capture (with Element Capture restriction) ─────
-            const tabStream = await navigator.mediaDevices.getDisplayMedia({
-                video: { displaySurface: 'browser', ...HIGH_QUALITY_VIDEO },
-                audio: true,
-                preferCurrentTab: true,
-                selfBrowserSurface: 'include',
-            });
+            const { stream: tabStream, stop: stopComposite } = buildCompositeStream({ background, zOrder, elements, videoEls });
 
-            if (canvasEl && typeof RestrictionTarget !== 'undefined' && RestrictionTarget.fromElement) {
-                try {
-                    const target = await RestrictionTarget.fromElement(canvasEl);
-                    await tabStream.getVideoTracks()[0].restrictTo(target);
-                } catch (_) {}
-            }
-
-            if (currentStreams.mic) {
-                currentStreams.mic.getAudioTracks()
-                    .filter(t => t.readyState !== 'ended')
-                    .forEach(t => tabStream.addTrack(t));
-            }
-
-            // ── Build individual track list ───────────────────────────────────
-            // Each track: { id, label, type, stream, recorder, chunks }
             const tracks = [];
-
             for (const sc of currentScreens) {
-                // Combine screen video + mic audio into each screen track
-                const trackStream = new MediaStream([
-                    ...sc.stream.getVideoTracks(),
-                    ...sc.stream.getAudioTracks(),
-                    ...(currentStreams.mic?.getAudioTracks().filter(t => t.readyState !== 'ended') ?? []),
-                ]);
-                tracks.push({ id: `screen_${sc.slot}`, label: sc.label, type: 'screen', stream: trackStream });
+                tracks.push({ id:`screen_${sc.slot}`, label:sc.label, type:'screen', stream: new MediaStream([
+                    ...sc.stream.getVideoTracks(), ...sc.stream.getAudioTracks(),
+                    ...(currentStreams.mic?.getAudioTracks().filter(t=>t.readyState!=='ended')??[]),
+                ]) });
             }
-
-            const camSlots = [
-                { id: 'faceCam', label: 'Face Cam' },
-                { id: 'handCam', label: 'Hand Cam' },
-                { id: 'roomCam', label: 'Room Cam' },
-            ];
-            for (const { id, label } of camSlots) {
+            for (const { id, label } of [{ id:'faceCam',label:'Face Cam' },{ id:'handCam',label:'Hand Cam' },{ id:'roomCam',label:'Room Cam' }]) {
                 const camStream = currentStreams[id];
                 if (!camStream) continue;
-                const trackStream = new MediaStream([
+                tracks.push({ id, label, type:'camera', stream: new MediaStream([
                     ...camStream.getVideoTracks(),
-                    ...(currentStreams.mic?.getAudioTracks().filter(t => t.readyState !== 'ended') ?? []),
-                ]);
-                tracks.push({ id, label, type: 'camera', stream: trackStream });
+                    ...(currentStreams.mic?.getAudioTracks().filter(t=>t.readyState!=='ended')??[]),
+                ]) });
             }
+            tracks.push({ id:'composite', label:'Final Output', type:'composite', stream: tabStream });
 
-            // Composite goes last so it's easy to find
-            tracks.push({ id: 'composite', label: 'Final Output', type: 'composite', stream: tabStream });
-
-            // ── Wire up one MediaRecorder per track ───────────────────────────
-            let doneCount = 0;
-            let resolveAll;
-            const allStopped = new Promise(resolve => { resolveAll = resolve; });
-
+            let doneCount=0, resolveAll;
+            const allStopped = new Promise(resolve => { resolveAll=resolve; });
             const trackRecorders = tracks.map(track => {
-                const chunks          = [];
-                // Use per-stream mimeType so audio-codec spec doesn't reject video-only streams
-                const trackMimeType   = getMimeTypeForStream(track.stream);
-                const recorder        = makeRecorder(track.stream, trackMimeType);
-                recorder.ondataavailable = (e) => { if (e.data.size > 0) chunks.push(e.data); };
-                recorder.onstop = () => {
-                    doneCount++;
-                    if (doneCount === trackRecorders.length) resolveAll();
-                };
-                return { ...track, recorder, chunks, mimeType: trackMimeType };
+                const chunks=[], trackMimeType=getMimeTypeForStream(track.stream);
+                const recorder=makeRecorder(track.stream, trackMimeType);
+                recorder.ondataavailable=(e)=>{ if(e.data.size>0)chunks.push(e.data); };
+                recorder.onstop=()=>{ if(++doneCount===trackRecorders.length)resolveAll(); };
+                return { ...track, recorder, chunks, mimeType:trackMimeType };
             });
 
-            // Use composite recorder as primary (for pause/resume controls)
-            const compositeRec = trackRecorders.find(t => t.id === 'composite');
-            recorderRef.current = compositeRec?.recorder ?? null;
-
+            recorderRef.current = trackRecorders.find(t=>t.id==='composite')?.recorder??null;
             discardRef.current = false;
-
             multiTrackRef.current = {
-                trackRecorders,
-                tabStream,
-                allStopped,
-                layoutSnapshot: { startTime, background, zOrder, boxes: currentBoxes, elements: elements ?? [] },
+                trackRecorders, stopComposite, allStopped,
+                layoutSnapshot: { startTime, background, zOrder, boxes: currentBoxes, elements: elements??[] },
             };
-
-            // ── Start all recorders simultaneously ────────────────────────────
-            trackRecorders.forEach(tr => tr.recorder.start(1000));
+            trackRecorders.forEach(tr=>tr.recorder.start(1000));
             startTimer();
             setRecording({ active: true, paused: false, elapsed: 0, blob: null, error: null, mode: 'multi' });
-
-            tabStream.getVideoTracks()[0]?.addEventListener('ended', () => {
-                // Check multiTrackRef, not recorderRef — the composite recorder may already
-                // be inactive by the time this event fires (stream ended before we got here).
-                if (multiTrackRef.current) stopMultiTrackRecording();
-            }, { once: true });
-
         } catch (e) {
-            if (e.name !== 'NotAllowedError') {
-                console.error('Multi-track recording failed:', e);
-                setRecording(r => ({ ...r, error: e.message || 'Recording failed.' }));
-            }
+            console.error('Multi-track recording failed:', e);
+            setRecording(r => ({ ...r, error: e.message||'Recording failed.' }));
         }
     }, [isObsRecording]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -388,19 +350,11 @@ const useCapture = ({ isObsRecording, boxes }) => {
     const stopMultiTrackRecording = useCallback(async () => {
         const mt = multiTrackRef.current;
         if (!mt) return;
-
-        const { trackRecorders, tabStream, allStopped, layoutSnapshot } = mt;
-
-        // Stop every recorder
-        trackRecorders.forEach(tr => {
-            if (tr.recorder.state !== 'inactive') tr.recorder.stop();
-        });
+        const { trackRecorders, stopComposite, allStopped, layoutSnapshot } = mt;
+        trackRecorders.forEach(tr => { if (tr.recorder.state!=='inactive') tr.recorder.stop(); });
         stopTimer();
-
-        // Wait for all onstop callbacks to fire
         await allStopped;
-
-        tabStream.getTracks().forEach(t => t.stop());
+        stopComposite();
         recorderRef.current  = null;
         multiTrackRef.current = null;
 
