@@ -66,7 +66,21 @@ const Divider = () => (
     <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '6px 0' }} />
 );
 
-const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, onDelete }) => (
+const ZBtn = ({ onClick, title, children }) => (
+    <button
+        onClick={onClick}
+        title={title}
+        style={{
+            background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 3, color: 'rgba(165,180,252,0.8)',
+            fontSize: 8, lineHeight: 1, padding: '1px 3px', cursor: 'pointer', flexShrink: 0,
+        }}
+    >
+        {children}
+    </button>
+);
+
+const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, onDelete, onLayerUp, onLayerDown }) => (
     <div
         onClick={onSelect}
         style={{
@@ -94,11 +108,8 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
             {visible ? <EyeOn /> : <EyeOff />}
         </button>
 
-        {/* Color indicator */}
-        <span style={{
-            fontSize: 12, flexShrink: 0, lineHeight: 1,
-            filter: visible ? 'none' : 'grayscale(1)',
-        }}>
+        {/* Icon */}
+        <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1, filter: visible ? 'none' : 'grayscale(1)' }}>
             {icon}
         </span>
 
@@ -111,7 +122,15 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
             {label}
         </span>
 
-        {/* Delete button (elements only) */}
+        {/* Z-order buttons (visible when selected) */}
+        {selected && (onLayerUp || onLayerDown) && (
+            <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(); }} title="Move up (on top)">▲</ZBtn>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(); }} title="Move down (behind)">▼</ZBtn>
+            </span>
+        )}
+
+        {/* Delete (elements only) */}
         {onDelete && (
             <button
                 title="Delete"
@@ -119,8 +138,7 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
                 style={{
                     background: 'none', border: 'none', padding: '2px 3px', cursor: 'pointer',
                     color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center',
-                    borderRadius: 4, flexShrink: 0,
-                    transition: 'color 0.1s',
+                    borderRadius: 4, flexShrink: 0, transition: 'color 0.1s',
                 }}
                 onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
                 onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.2)'}
@@ -200,7 +218,16 @@ const LayersPanel = ({
     startCameraStream,
     stopCameraStream,
     errors = {},
+    // Z-order
+    zOrder = [],
+    onLayerUp,
+    onLayerDown,
 }) => {
+    // Higher index in zOrder = higher z = rendered on top = shown first in list
+    const zRank = (id) => {
+        const i = zOrder.indexOf(id);
+        return i === -1 ? -1 : i;
+    };
     const [showAddPanel, setShowAddPanel] = useState(false);
 
     return (
@@ -275,24 +302,28 @@ const LayersPanel = ({
 
                 {/* ── Displays ── */}
                 <SectionLabel>Displays</SectionLabel>
-                {screens.map(sc => {
-                    const boxId = `screen_${sc.slot}`;
-                    const color = SCREEN_COLORS[sc.slot] ?? '#6366f1';
-                    const visible = boxVisibility[boxId] ?? true;
-                    return (
-                        <LayerRow
-                            key={sc.slot}
-                            icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />}
-                            label={sc.label}
-                            color={color}
-                            visible={visible}
-                            selected={selectedBox === boxId}
-                            onSelect={() => onSelectBox(boxId)}
-                            onToggle={() => onToggleBuiltin(boxId)}
-                            onDelete={() => onRemoveScreen(sc.slot)}
-                        />
-                    );
-                })}
+                {[...screens]
+                    .sort((a, b) => zRank(`screen_${b.slot}`) - zRank(`screen_${a.slot}`))
+                    .map(sc => {
+                        const boxId = `screen_${sc.slot}`;
+                        const color = SCREEN_COLORS[sc.slot] ?? '#6366f1';
+                        const visible = boxVisibility[boxId] ?? true;
+                        return (
+                            <LayerRow
+                                key={sc.slot}
+                                icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />}
+                                label={sc.label}
+                                color={color}
+                                visible={visible}
+                                selected={selectedBox === boxId}
+                                onSelect={() => onSelectBox(boxId)}
+                                onToggle={() => onToggleBuiltin(boxId)}
+                                onDelete={() => onRemoveScreen(sc.slot)}
+                                onLayerUp={() => onLayerUp?.(boxId)}
+                                onLayerDown={() => onLayerDown?.(boxId)}
+                            />
+                        );
+                    })}
                 <button
                     onClick={onAddScreen}
                     disabled={screens.length >= 4}
@@ -309,21 +340,25 @@ const LayersPanel = ({
                     {screens.length >= 4 ? 'Max 4 displays' : '+ Add Display'}
                 </button>
 
-                {/* ── Built-in layers ── */}
+                {/* ── Built-in layers sorted by z-order (top of list = on top) ── */}
                 <Divider />
                 <SectionLabel>Canvas</SectionLabel>
-                {BUILTIN_LAYERS.map(layer => (
-                    <LayerRow
-                        key={layer.id}
-                        icon={layer.icon}
-                        label={layer.label}
-                        color={layer.color}
-                        visible={boxVisibility[layer.id] ?? true}
-                        selected={selectedBox === layer.id}
-                        onSelect={() => onSelectBox(layer.id)}
-                        onToggle={() => onToggleBuiltin(layer.id)}
-                    />
-                ))}
+                {[...BUILTIN_LAYERS]
+                    .sort((a, b) => zRank(b.id) - zRank(a.id))
+                    .map(layer => (
+                        <LayerRow
+                            key={layer.id}
+                            icon={layer.icon}
+                            label={layer.label}
+                            color={layer.color}
+                            visible={boxVisibility[layer.id] ?? true}
+                            selected={selectedBox === layer.id}
+                            onSelect={() => onSelectBox(layer.id)}
+                            onToggle={() => onToggleBuiltin(layer.id)}
+                            onLayerUp={() => onLayerUp?.(layer.id)}
+                            onLayerDown={() => onLayerDown?.(layer.id)}
+                        />
+                    ))}
 
                 {/* ── Custom elements ── */}
                 {elements.length > 0 && (

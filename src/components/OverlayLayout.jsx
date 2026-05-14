@@ -609,6 +609,9 @@ const OverlayLayout = () => {
                         startCameraStream={capture.startCameraStream}
                         stopCameraStream={capture.stopCameraStream}
                         errors={capture.errors}
+                        zOrder={zOrder}
+                        onLayerUp={layerUp}
+                        onLayerDown={layerDown}
                     />
                 </div>
 
@@ -656,17 +659,14 @@ const OverlayLayout = () => {
             {/* ── CANVAS POSITIONING WRAPPER ── */}
             {/* In editor: offset by header + left/right panels, canvas is 16:9 preview */}
             {/* In live:   fills the entire viewport absolutely */}
-            {/* Canvas wrapper — in editor it's a flex centering box; in live it's invisible */}
             <div style={{
                 position: 'absolute',
                 top:    inEditor ? 40 : 0,
                 left:   inEditor ? 240 : 0,
                 right:  inEditor ? (selectedElement ? 260 : 0) : 0,
                 bottom: 0,
-                display: inEditor ? 'flex' : 'block',
-                alignItems: 'center',
-                justifyContent: 'center',
-                padding: inEditor ? '14px 0' : 0,
+                overflow: inEditor ? 'auto' : undefined,
+                padding: inEditor ? 16 : 0,
                 boxSizing: 'border-box',
                 ...(inEditor ? editorWorkspaceBg : { background: 'transparent' }),
             }}>
@@ -674,18 +674,15 @@ const OverlayLayout = () => {
                 {inEditor && (
                     <div style={{
                         position: 'absolute', inset: 0, pointerEvents: 'none',
-                        backgroundImage: 'radial-gradient(rgba(99,102,241,0.12) 1px, transparent 1px)',
+                        backgroundImage: 'radial-gradient(rgba(99,102,241,0.10) 1px, transparent 1px)',
                         backgroundSize: '24px 24px',
                     }} />
                 )}
-
                 {/* ── THE CANVAS ──
                     Live mode  → position:absolute filling the viewport (OBS sees this).
-                    Editor mode → 16:9 preview that fits the available space.
-                    CSS min() picks the largest 16:9 box constrained by BOTH dimensions:
-                      min(availW, availH × 16/9)  →  width
-                    where availW = 100vw - leftPanel - padding×2
-                          availH = 100vh - header  - padding×2
+                    Editor mode → fills content area of wrapper (16px padding on each side),
+                                  height from aspect-ratio so 16:9 is always maintained.
+                    The 16px padding ensures resize handles at canvas edges stay reachable.
                 */}
                 <div
                     ref={canvasRef}
@@ -695,9 +692,9 @@ const OverlayLayout = () => {
                         isolation: 'isolate', // required for Element Capture (RestrictionTarget)
                         ...(inEditor ? {
                             position: 'relative',
-                            width:  `min(calc(100vw - ${selectedElement ? 500 : 240}px), calc((100vh - 68px) * 16 / 9))`,
-                            height: `min(calc(100vh - 68px), calc((100vw - ${selectedElement ? 500 : 240}px) * 9 / 16))`,
-                            flexShrink: 0,
+                            width: '100%',
+                            aspectRatio: '16 / 9',
+                            boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
                         } : {
                             position: 'absolute',
                             inset: 0,

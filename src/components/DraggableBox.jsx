@@ -51,46 +51,44 @@ const DraggableBox = ({
     const onDragMouseDown = (e) => {
         if (!editMode) return;
         e.preventDefault();
-        e.stopPropagation(); // prevent bubbling to root onMouseDown
+        e.stopPropagation();
 
-        // Always reset here — stopPropagation means root onMouseDown won't run,
-        // so this is the only place that resets it when the handle is clicked.
         didDrag.current = false;
         anyDragging = true;
-        setHovered(false); // clear local hover so outline resets cleanly
+        // NOTE: do NOT call setHovered here — any React state update schedules a
+        // re-render which resets el.style.left back to the % value mid-drag.
 
         const canvas = canvasRef.current;
         if (!canvas) return;
         const el = elRef.current;
 
+        // el.offsetLeft/Top are canvas-relative px — same space as CSS left/top px.
+        // Using these avoids any viewport→canvas coordinate conversion.
+        const startLeft   = el.offsetLeft;
+        const startTop    = el.offsetTop;
         const startMouseX = e.clientX;
         const startMouseY = e.clientY;
-        const canvasRect  = canvas.getBoundingClientRect();
-        const elRect      = el.getBoundingClientRect();
-        const startLeft   = elRect.left - canvasRect.left;
-        const startTop    = elRect.top  - canvasRect.top;
 
         const onMove = (ev) => {
             const dx = ev.clientX - startMouseX;
             const dy = ev.clientY - startMouseY;
-            // Only start dragging after the mouse moves beyond the dead-zone
             if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
             el.style.left = `${startLeft + dx}px`;
             el.style.top  = `${startTop  + dy}px`;
         };
 
-        const onUp = () => {
+        const onUp = (ev) => {
             window.removeEventListener('mousemove', onMove);
             window.removeEventListener('mouseup',   onUp);
             anyDragging = false;
             if (didDrag.current) {
-                const rect  = el.getBoundingClientRect();
-                const pRect = canvas.getBoundingClientRect();
+                const dx = ev.clientX - startMouseX;
+                const dy = ev.clientY - startMouseY;
                 onBoxChange(id, {
                     ...boxRef.current,
-                    x: ((rect.left - pRect.left) / canvas.offsetWidth)  * 100,
-                    y: ((rect.top  - pRect.top)  / canvas.offsetHeight) * 100,
+                    x: ((startLeft + dx) / canvas.offsetWidth)  * 100,
+                    y: ((startTop  + dy) / canvas.offsetHeight) * 100,
                 });
             }
         };
@@ -122,13 +120,14 @@ const DraggableBox = ({
         const minW = (MIN_W_PCT / 100) * W;
         const minH = (MIN_H_PCT / 100) * H;
 
+        let nL = left, nT = top, nW = width, nH = height;
+
         const onMove = (ev) => {
             const dx = ev.clientX - startMouseX;
             const dy = ev.clientY - startMouseY;
-            // Only start resizing after the mouse moves beyond the dead-zone
             if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
-            let nL = left, nT = top, nW = width, nH = height;
+            nL = left; nT = top; nW = width; nH = height;
             if (dir.includes('e')) nW = Math.max(minW, width  + dx);
             if (dir.includes('s')) nH = Math.max(minH, height + dy);
             if (dir.includes('w')) { nW = Math.max(minW, width  - dx); nL = left + width  - nW; }
@@ -144,13 +143,11 @@ const DraggableBox = ({
             window.removeEventListener('mouseup',   onUp);
             anyDragging = false;
             if (didDrag.current) {
-                const rect  = el.getBoundingClientRect();
-                const pRect = canvas.getBoundingClientRect();
                 onBoxChange(id, {
-                    x: ((rect.left - pRect.left) / W) * 100,
-                    y: ((rect.top  - pRect.top)  / H) * 100,
-                    w: (rect.width  / W) * 100,
-                    h: (rect.height / H) * 100,
+                    x: (nL / W) * 100,
+                    y: (nT / H) * 100,
+                    w: (nW / W) * 100,
+                    h: (nH / H) * 100,
                 });
             }
         };
