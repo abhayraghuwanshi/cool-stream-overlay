@@ -12,7 +12,9 @@ import ElementEditor from './ElementEditor';
 import ElementRenderer, { defaultElement } from './ElementRenderer';
 import LayersPanel from './LayersPanel';
 import SocialFeed from './SocialFeed';
+import ThemePanel from './ThemePanel';
 import VideoFeed from './VideoFeed';
+import { DEFAULT_THEME, getTheme } from '../theme/themes';
 
 const DEFAULT_BOXES = {
     faceCam: { x: 80, y: 0, w: 20, h: 20 },
@@ -27,7 +29,7 @@ const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
 const ElementBox = memo(
     ({
-        element, zIndex, selected, editMode, canvasRef, extraStyle,
+        element, zIndex, selected, editMode, canvasRef, extraStyle, theme,
         onSelect, onBoxChange, onUploadLogo,
     }) => {
         const handleUploadLogo = useCallback(() => onUploadLogo(element.id), [element.id, onUploadLogo]);
@@ -45,7 +47,7 @@ const ElementBox = memo(
                 canvasRef={canvasRef}
                 extraStyle={extraStyle}
             >
-                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} />
+                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} theme={theme} />
             </DraggableBox>
         );
     },
@@ -56,6 +58,7 @@ const ElementBox = memo(
         prev.editMode === next.editMode &&
         prev.canvasRef === next.canvasRef &&
         prev.extraStyle === next.extraStyle &&
+        prev.theme === next.theme &&
         prev.onSelect === next.onSelect &&
         prev.onBoxChange === next.onBoxChange &&
         prev.onUploadLogo === next.onUploadLogo
@@ -95,9 +98,14 @@ const OverlayLayout = () => {
         tasks: [{ id: 1, text: 'Refactoring Overlay', status: 'active' }],
         elements: [],
         background: { type: 'solid', color: '#0a0a0f' },
+        theme: DEFAULT_THEME,
+        scenes: [],
     });
 
     const [showBgPanel, setShowBgPanel] = useState(false);
+    const [showThemePanel, setShowThemePanel] = useState(false);
+    const themeRef = useRef(DEFAULT_THEME);
+    themeRef.current = layoutSettings.theme ?? DEFAULT_THEME;
     const [editMode, setEditMode] = useState(false);
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
@@ -134,6 +142,21 @@ const OverlayLayout = () => {
         }).catch(console.error);
     }, []);
 
+    // ── Theme ────────────────────────────────────────────────────────────────
+    // applyTheme replaces the whole theme (picking a starter); updateTheme
+    // patches individual tokens (editing accent / radius / font in the panel).
+    const applyTheme = useCallback((theme) => updateLayout({ theme: getTheme(theme) }), [updateLayout]);
+    const updateTheme = useCallback((changes) =>
+        setLayoutSettings(s => {
+            const theme = { ...(s.theme ?? DEFAULT_THEME), ...changes };
+            fetch(`${BACKEND_HTTP}/layout`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ theme, _clientId: SESSION_ID }),
+            }).catch(console.error);
+            return { ...s, theme };
+        }), []);
+
     // ── Stable box updater — only updates boxes state, not layoutSettings ───
     const updateBox = useCallback((id, newBox) => {
         const updated = { ...boxesRef.current, [id]: newBox };
@@ -166,6 +189,8 @@ const OverlayLayout = () => {
         const nEls   = snapshot.elements ?? [];
         const nBg    = snapshot.background ?? { type: 'solid', color: '#0a0a0f' };
         const nZ     = snapshot.zOrder ?? Object.keys(DEFAULT_BOXES);
+        // A scene may carry a theme (theme packs do); otherwise keep the current one.
+        const nTheme = snapshot.theme ? getTheme(snapshot.theme) : undefined;
 
         boxesRef.current = nBoxes;
         setBoxes(nBoxes);
@@ -180,6 +205,7 @@ const OverlayLayout = () => {
             showFaceCam: nVis.faceCam,
             showHandCam: nVis.handCam,
             showRoomCam: nVis.roomCam,
+            ...(nTheme ? { theme: nTheme } : {}),
         }));
         fetch(`${BACKEND_HTTP}/layout`, {
             method: 'POST',
@@ -187,6 +213,7 @@ const OverlayLayout = () => {
             body: JSON.stringify({
                 boxes: nBoxes, elements: nEls, background: nBg, boxVisibility: nVis,
                 showFaceCam: nVis.faceCam, showHandCam: nVis.handCam, showRoomCam: nVis.roomCam,
+                ...(nTheme ? { theme: nTheme } : {}),
                 _clientId: SESSION_ID,
             }),
         }).catch(console.error);
@@ -215,7 +242,7 @@ const OverlayLayout = () => {
 
     // ── Element helpers ──────────────────────────────────────────────────────
     const addElement = useCallback((type) => {
-        const el = defaultElement(type);
+        const el = defaultElement(type, themeRef.current);
         setLayoutSettings(s => {
             const newElements = [...(s.elements ?? []), el];
             fetch(`${BACKEND_HTTP}/layout`, {
@@ -398,6 +425,7 @@ const OverlayLayout = () => {
         socialGithub, socialTwitter, socialLinkedin,
         useGPU, tasks = [], elements = [],
         background, boxVisibility = DEFAULT_VISIBILITY,
+        theme = DEFAULT_THEME,
     } = layoutSettings;
 
     const selectedElement = elements.find(el => el.id === selectedElementId) ?? null;
@@ -508,7 +536,8 @@ const OverlayLayout = () => {
                         onApplyScene={applyScene}
                         onSaveScene={saveScene}
                         onDeleteScene={deleteScene}
-                        onOpenBackground={() => setShowBgPanel(v => !v)}
+                        onOpenBackground={() => { setShowBgPanel(v => !v); setShowThemePanel(false); }}
+                        onOpenTheme={() => { setShowThemePanel(v => !v); setShowBgPanel(false); }}
                         onResetLayout={resetLayout}
                         devices={capture.devices}
                         streams={streams}
@@ -544,6 +573,16 @@ const OverlayLayout = () => {
                         bg={background}
                         onChange={(newBg) => updateLayout({ background: newBg })}
                         onClose={() => setShowBgPanel(false)}
+                    />
+                )}
+
+                {/* Theme panel */}
+                {showThemePanel && (
+                    <ThemePanel
+                        theme={theme}
+                        onApply={applyTheme}
+                        onChange={updateTheme}
+                        onClose={() => setShowThemePanel(false)}
                     />
                 )}
             </>)}
@@ -608,6 +647,7 @@ const OverlayLayout = () => {
                                 onUploadLogo={onUploadLogo}
                                 editMode={editMode}
                                 canvasRef={canvasRef}
+                                theme={theme}
                             />
                         );
                     })}

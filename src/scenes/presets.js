@@ -27,7 +27,7 @@ const text = (id, content, box, extra = {}) => ({
     bgOpacity: 0,
     content,
     fontSize: 64,
-    fontColor: '#ffffff',
+    fontColor: '@text',   // theme token — re-skins when the theme changes
     bold: true,
     italic: false,
     align: 'center',
@@ -47,6 +47,21 @@ const clock = (id, box) => ({
     align: 'center',
 });
 
+const countdown = (id, box, durationSec = 300, extra = {}) => ({
+    id: `preset_${id}`,
+    type: 'countdown',
+    hidden: false,
+    box,
+    opacity: 1,
+    durationSec,
+    fontSize: 64,
+    fontColor: '@accent',   // countdown pops in the theme accent
+    bold: true,
+    align: 'center',
+    letterSpacing: 2,
+    ...extra,
+});
+
 export const SCENE_PRESETS = [
     {
         id: 'starting-soon',
@@ -56,10 +71,11 @@ export const SCENE_PRESETS = [
             background: { type: 'gradient', from: '#1e1b4b', to: '#0a0a0f', dir: '135' },
             boxVisibility: { ...hideAll },
             elements: [
-                text('ss-title', 'STARTING SOON', { x: 20, y: 38, w: 60, h: 14 }, { fontSize: 52 }),
-                text('ss-sub', 'Stream begins shortly — grab a seat', { x: 22, y: 54, w: 56, h: 8 },
+                text('ss-title', 'STARTING SOON', { x: 20, y: 28, w: 60, h: 12 }, { fontSize: 48 }),
+                countdown('ss-timer', { x: 35, y: 44, w: 30, h: 14 }, 300, { fontSize: 64 }),
+                text('ss-sub', 'Stream begins shortly — grab a seat', { x: 22, y: 62, w: 56, h: 8 },
                     { fontSize: 20, bold: false, fontColor: 'rgba(255,255,255,0.55)', letterSpacing: 1 }),
-                clock('ss-clock', { x: 40, y: 10, w: 20, h: 8 }),
+                clock('ss-clock', { x: 42, y: 9, w: 16, h: 6 }),
             ],
             zOrder: BUILTIN_BOX_IDS,
         },
@@ -84,9 +100,9 @@ export const SCENE_PRESETS = [
                     subContent: 'Just chatting',
                     subFontSize: 13,
                     subFontColor: '#aaaaaa',
-                    bgColor: '#000000',
+                    bgColor: '@panel',
                     bgOpacity: 0.7,
-                    borderRadius: 6,
+                    borderRadius: '@radius',
                 },
             ],
             zOrder: BUILTIN_BOX_IDS,

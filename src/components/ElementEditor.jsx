@@ -1,3 +1,4 @@
+import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 import { hexToRgba } from './ElementRenderer';
 
@@ -156,7 +157,8 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
 
     const set = (key, val) => onChange({ [key]: val });
     const { type } = element;
-    const isText = ['text', 'lowerthird', 'clock'].includes(type);
+    const isText = ['text', 'lowerthird', 'clock', 'countdown'].includes(type);
+    const isAutoText = type === 'clock' || type === 'countdown'; // auto-generated content, no free text input
 
     const handleLogoUpload = (e) => {
         const file = e.target.files?.[0];
@@ -197,7 +199,7 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
             <Divider />
 
             {/* ── Text content ── */}
-            {isText && type !== 'clock' && (
+            {isText && !isAutoText && (
                 <Group label="Content">
                     <TextInput
                         value={element.content}
@@ -205,6 +207,24 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                         placeholder="Enter text..."
                         style={{ width: 160 }}
                     />
+                </Group>
+            )}
+
+            {/* ── Countdown duration ── */}
+            {type === 'countdown' && (
+                <Group label="Duration">
+                    <NumberInput
+                        value={Math.floor((element.durationSec ?? 0) / 60)}
+                        onChange={v => set('durationSec', Math.max(0, v) * 60 + (element.durationSec ?? 0) % 60)}
+                        min={0} max={180} style={{ width: 52 }}
+                    />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>min</span>
+                    <NumberInput
+                        value={(element.durationSec ?? 0) % 60}
+                        onChange={v => set('durationSec', Math.floor((element.durationSec ?? 0) / 60) * 60 + Math.min(59, Math.max(0, v)))}
+                        min={0} max={59} style={{ width: 52 }}
+                    />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec</span>
                 </Group>
             )}
 
@@ -273,15 +293,15 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                                 fontFamily: 'inter, system-ui',
                             }}
                         >
-                            {element.src ? '↺ Replace' : '⬆ Upload'}
+                            {element.src ? <><RefreshCw size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Replace</> : <><Upload size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Upload</>}
                         </button>
                         <input ref={fileRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
                         {element.src && (
                             <button
                                 onClick={() => onChange({ src: null })}
-                                style={{ background: 'none', border: '1px solid rgba(255,100,100,0.3)', borderRadius: 5, color: 'rgba(255,100,100,0.7)', fontSize: 11, padding: '4px 8px', cursor: 'pointer' }}
+                                style={{ background: 'none', border: '1px solid rgba(255,100,100,0.3)', borderRadius: 5, color: 'rgba(255,100,100,0.7)', fontSize: 11, padding: '4px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             >
-                                ✕
+                                <X size={12} />
                             </button>
                         )}
                     </Group>

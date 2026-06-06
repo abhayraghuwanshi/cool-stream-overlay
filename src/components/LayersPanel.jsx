@@ -50,6 +50,7 @@ const ELEMENT_TYPES = [
         </span>
     )},
     { type: 'clock',      label: 'Clock',      color: '#84cc16', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#84cc16', letterSpacing: -0.5 }}>00:00</span> },
+    { type: 'countdown',  label: 'Countdown',  color: '#14b8a6', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#14b8a6', letterSpacing: -0.5 }}>05:00</span> },
 ];
 
 const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]));
@@ -301,8 +302,9 @@ const LayersPanel = ({
     onApplyScene,
     onSaveScene,
     onDeleteScene,
-    // Background / Reset
+    // Background / Theme / Reset
     onOpenBackground,
+    onOpenTheme,
     onResetLayout,
     // Camera / device props
     devices = { cameras: [], mics: [] },
@@ -497,6 +499,17 @@ const LayersPanel = ({
                 display: 'flex', gap: 5, flexShrink: 0,
             }}>
                 <button
+                    onClick={onOpenTheme}
+                    style={{
+                        flex: 1, padding: '5px 0', borderRadius: 7,
+                        background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#a5b4fc', fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                        cursor: 'pointer', transition: 'all 0.12s',
+                    }}
+                >
+                    Theme
+                </button>
+                <button
                     onClick={onOpenBackground}
                     style={{
                         flex: 1, padding: '5px 0', borderRadius: 7,
@@ -505,7 +518,7 @@ const LayersPanel = ({
                         cursor: 'pointer', transition: 'all 0.12s',
                     }}
                 >
-                    Background
+                    BG
                 </button>
                 <button
                     onClick={onResetLayout}
