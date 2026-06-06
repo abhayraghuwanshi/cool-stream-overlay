@@ -332,8 +332,26 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                 </>
             )}
 
+            {/* ── Cam frame controls ── */}
+            {type === 'frame' && (
+                <>
+                    <Group label="Frame style">
+                        {['solid', 'glow', 'gradient', 'none'].map(s => (
+                            <ToggleBtn key={s} active={(element.frameStyle ?? 'solid') === s} onClick={() => set('frameStyle', s)} title={s}>{s}</ToggleBtn>
+                        ))}
+                    </Group>
+                    <Group label="Border width">
+                        <NumberInput value={element.borderWidth} onChange={v => set('borderWidth', v)} min={1} max={24} style={{ width: 52 }} />
+                    </Group>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Frame colour follows the theme accent. Change it in the Theme panel.
+                    </div>
+                    <Divider />
+                </>
+            )}
+
             {/* ── Background ── */}
-            {type !== 'divider' && (
+            {type !== 'divider' && type !== 'frame' && (
                 <>
                     <ColorInput value={element.bgColor} onChange={v => set('bgColor', v)} label="BG Color" />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>

@@ -1,5 +1,6 @@
 import { X } from 'lucide-react';
 import { THEMES } from '../theme/themes';
+import { THEME_PACKS, packGradient } from '../scenes/packs';
 
 // ── Font choices ──────────────────────────────────────────────────────────
 const FONTS = [
@@ -38,7 +39,7 @@ const tabStyle = (active) => ({
 });
 
 // ── Main panel ─────────────────────────────────────────────────────────────
-const ThemePanel = ({ theme, onApply, onChange, onClose }) => {
+const ThemePanel = ({ theme, onApply, onChange, onInstallPack, onClose }) => {
     const t = theme ?? THEMES[0];
     const set = (changes) => onChange?.(changes);
 
@@ -68,6 +69,36 @@ const ThemePanel = ({ theme, onApply, onChange, onClose }) => {
             </div>
 
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
+
+                {/* ── Theme packs (one-click look + scene) ── */}
+                {onInstallPack && (
+                    <div>
+                        <div style={labelStyle}>Library — install a look</div>
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5 }}>
+                            {THEME_PACKS.map(pack => (
+                                <button
+                                    key={pack.id}
+                                    onClick={() => onInstallPack(pack)}
+                                    title={`Install ${pack.name}`}
+                                    style={{
+                                        display: 'flex', alignItems: 'center', gap: 8,
+                                        padding: '6px 8px', borderRadius: 8, cursor: 'pointer', textAlign: 'left',
+                                        background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.08)',
+                                        transition: 'all 0.12s',
+                                    }}
+                                    onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.08)'; e.currentTarget.style.borderColor = 'rgba(99,102,241,0.4)'; }}
+                                    onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
+                                >
+                                    <span style={{ width: 28, height: 28, borderRadius: 6, flexShrink: 0, background: packGradient(pack) }} />
+                                    <span style={{ display: 'flex', flexDirection: 'column', gap: 1, minWidth: 0 }}>
+                                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.85)', fontFamily: 'inter, system-ui' }}>{pack.name}</span>
+                                        <span style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pack.tagline}</span>
+                                    </span>
+                                </button>
+                            ))}
+                        </div>
+                    </div>
+                )}
 
                 {/* ── Starter themes ── */}
                 <div>

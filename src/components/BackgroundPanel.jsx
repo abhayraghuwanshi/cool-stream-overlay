@@ -1,3 +1,4 @@
+import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 
 // ── Presets ────────────────────────────────────────────────────────────────
@@ -129,13 +130,13 @@ const BackgroundPanel = ({ bg, onChange, onClose }) => {
     return (
         <div style={{
             position: 'absolute',
-            left: 8, top: 56,
+            left: 248, top: 48,
             width: 240,
             background: 'rgba(9,9,18,0.94)',
             backdropFilter: 'blur(14px)',
             border: '1px solid rgba(255,255,255,0.07)',
             borderRadius: 12,
-            zIndex: 200,
+            zIndex: 350,
             boxShadow: '0 8px 32px rgba(0,0,0,0.65)',
             overflow: 'hidden',
         }}>
@@ -148,7 +149,7 @@ const BackgroundPanel = ({ bg, onChange, onClose }) => {
                 <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: 'rgba(255,255,255,0.5)' }}>
                     Background
                 </span>
-                <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 16, lineHeight: 1, padding: 0 }}>×</button>
+                <button onClick={onClose} style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 0, display: 'flex' }}><X size={14} /></button>
             </div>
 
             <div style={{ padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -277,12 +278,12 @@ const BackgroundPanel = ({ bg, onChange, onClose }) => {
                                 onClick={() => fileRef.current?.click()}
                                 style={{ ...controlStyle, background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc' }}
                             >
-                                {current.src ? '↺ Replace image' : '⬆ Upload image'}
+                                {current.src ? <><RefreshCw size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Replace image</> : <><Upload size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Upload image</>}
                             </button>
                             {current.src && (
                                 <button onClick={() => set({ src: null })}
-                                    style={{ ...controlStyle, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: 'rgba(239,68,68,0.8)' }}>
-                                    ✕
+                                    style={{ ...controlStyle, background: 'rgba(239,68,68,0.1)', border: '1px solid rgba(239,68,68,0.25)', color: 'rgba(239,68,68,0.8)', display: 'flex', alignItems: 'center' }}>
+                                    <X size={12} />
                                 </button>
                             )}
                             <input ref={fileRef} type="file" accept="image/*" onChange={handleImageUpload} style={{ display: 'none' }} />

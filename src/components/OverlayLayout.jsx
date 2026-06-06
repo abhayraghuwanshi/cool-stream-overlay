@@ -6,6 +6,7 @@ import { useOBS } from '../context/OBSContext';
 import useCapture from '../hooks/useCapture';
 import AICompanion from './AICompanion';
 import BackgroundPanel, { bgToStyle } from './BackgroundPanel';
+import CameraEditor from './CameraEditor';
 import CurrentTask from './CurrentTask';
 import DraggableBox from './DraggableBox';
 import ElementEditor from './ElementEditor';
@@ -15,6 +16,7 @@ import SocialFeed from './SocialFeed';
 import ThemePanel from './ThemePanel';
 import VideoFeed from './VideoFeed';
 import { DEFAULT_THEME, getTheme } from '../theme/themes';
+import { packSnapshot } from '../scenes/packs';
 
 const DEFAULT_BOXES = {
     faceCam: { x: 80, y: 0, w: 20, h: 20 },
@@ -24,6 +26,8 @@ const DEFAULT_BOXES = {
     roomCam: { x: 90, y: 75, w: 10, h: 10 },
     currentTask: { x: 0, y: 85, w: 80, h: 15 },
 };
+
+const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
 
 const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
@@ -240,6 +244,9 @@ const OverlayLayout = () => {
         updateLayout({ scenes: (layoutSettings.scenes ?? []).filter(s => s.id !== id) });
     }, [layoutSettings.scenes, updateLayout]);
 
+    // Installing a pack applies its theme + signature scene in one shot.
+    const installPack = useCallback((pack) => applyScene(packSnapshot(pack)), [applyScene]);
+
     // ── Element helpers ──────────────────────────────────────────────────────
     const addElement = useCallback((type) => {
         const el = defaultElement(type, themeRef.current);
@@ -429,6 +436,8 @@ const OverlayLayout = () => {
     } = layoutSettings;
 
     const selectedElement = elements.find(el => el.id === selectedElementId) ?? null;
+    const selectedCamera = CAMERA_IDS.includes(selectedBox) ? selectedBox : null;
+    const rightPanelOpen = !!selectedElement || !!selectedCamera;
 
     const shouldRenderBox = (id) => getBoxVisible(id);
 
@@ -539,31 +548,38 @@ const OverlayLayout = () => {
                         onOpenBackground={() => { setShowBgPanel(v => !v); setShowThemePanel(false); }}
                         onOpenTheme={() => { setShowThemePanel(v => !v); setShowBgPanel(false); }}
                         onResetLayout={resetLayout}
-                        devices={capture.devices}
                         streams={streams}
-                        selectedDevices={capture.selectedDevices}
-                        setSelectedDevice={capture.setSelectedDevice}
-                        startCameraStream={capture.startCameraStream}
-                        stopCameraStream={capture.stopCameraStream}
-                        errors={capture.errors}
                         zOrder={zOrder}
                         onLayerUp={layerUp}
                         onLayerDown={layerDown}
                     />
                 </div>
 
-                {/* Right panel: element editor */}
-                {selectedElement && (
+                {/* Right panel: element editor or camera device picker */}
+                {rightPanelOpen && (
                     <div style={{
                         position: 'absolute', top: 40, right: 0, bottom: 0, width: 260, zIndex: 300,
                         background: 'rgba(7,7,16,0.98)', borderLeft: '1px solid rgba(255,255,255,0.07)',
                         overflow: 'auto',
                     }}>
-                        <ElementEditor
-                            element={selectedElement}
-                            onChange={(changes) => updateElement(selectedElement.id, changes)}
-                            onDelete={() => deleteElement(selectedElement.id)}
-                        />
+                        {selectedElement ? (
+                            <ElementEditor
+                                element={selectedElement}
+                                onChange={(changes) => updateElement(selectedElement.id, changes)}
+                                onDelete={() => deleteElement(selectedElement.id)}
+                            />
+                        ) : (
+                            <CameraEditor
+                                slot={selectedCamera}
+                                devices={capture.devices.cameras}
+                                selectedDeviceId={capture.selectedDevices[selectedCamera]}
+                                onSelectDevice={capture.setSelectedDevice}
+                                active={!!streams[selectedCamera]}
+                                onStart={capture.startCameraStream}
+                                onStop={capture.stopCameraStream}
+                                error={capture.errors[selectedCamera]}
+                            />
+                        )}
                     </div>
                 )}
 
@@ -582,6 +598,7 @@ const OverlayLayout = () => {
                         theme={theme}
                         onApply={applyTheme}
                         onChange={updateTheme}
+                        onInstallPack={installPack}
                         onClose={() => setShowThemePanel(false)}
                     />
                 )}
@@ -594,7 +611,7 @@ const OverlayLayout = () => {
                 position: 'absolute',
                 top:    inEditor ? 40 : 0,
                 left:   inEditor ? 240 : 0,
-                right:  inEditor ? (selectedElement ? 260 : 0) : 0,
+                right:  inEditor ? (rightPanelOpen ? 260 : 0) : 0,
                 bottom: 0,
                 overflow: inEditor ? 'auto' : undefined,
                 padding: inEditor ? 16 : 0,

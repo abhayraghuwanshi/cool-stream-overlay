@@ -58,6 +58,8 @@ const ITEMS = [
     },
 ];
 
+import { X } from 'lucide-react';
+
 const ElementLibrary = ({ onAdd, onClose }) => (
     <div
         style={{
@@ -84,9 +86,9 @@ const ElementLibrary = ({ onAdd, onClose }) => (
             </span>
             <button
                 onClick={onClose}
-                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', fontSize: 14, lineHeight: 1, padding: 0 }}
+                style={{ background: 'none', border: 'none', color: 'rgba(255,255,255,0.3)', cursor: 'pointer', padding: 0, display: 'flex' }}
             >
-                ×
+                <X size={14} />
             </button>
         </div>
 

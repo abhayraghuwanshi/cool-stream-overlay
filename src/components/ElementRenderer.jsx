@@ -62,6 +62,15 @@ export const defaultElement = (type, theme = DEFAULT_THEME) => {
             bgColor: T.accent, bgOpacity: 0.85,
             box: { x: 42, y: 36, w: 16, h: 28 },
         },
+        frame: {
+            // Decorative border to sit over a cam box — transparent centre.
+            bgColor: '@accent',        // token: re-skins with the theme
+            bgOpacity: 0,
+            borderRadius: '@radius',
+            borderWidth: 4,
+            frameStyle: T.frameStyle,  // none | solid | glow | gradient
+            box: { x: 49, y: 6, w: 22, h: 32 },
+        },
         logo: {
             bgOpacity: 0, objectFit: 'contain', imgPadding: 8,
             box: { x: 38, y: 35, w: 24, h: 18 },
@@ -213,6 +222,29 @@ const ElementRenderer = ({ element, onUploadLogo, editMode, theme = DEFAULT_THEM
     // ── Circle / Ellipse ──
     if (type === 'circle') {
         return <div style={{ ...outerStyle, borderRadius: '50%' }} />;
+    }
+
+    // ── Cam frame ── decorative border over a cam box; transparent centre.
+    if (type === 'frame') {
+        const fs = element.frameStyle ?? T.frameStyle ?? 'solid';
+        if (fs === 'none') return null;
+        const color = bgColor;           // resolved frame colour (defaults to @accent)
+        const w = element.borderWidth ?? 4;
+        if (fs === 'gradient') {
+            return (
+                <div style={{ width: '100%', height: '100%', borderRadius, padding: w, opacity, boxSizing: 'border-box', background: `linear-gradient(135deg, ${color}, ${T.accent2})` }}>
+                    <div style={{ width: '100%', height: '100%', borderRadius: Math.max(0, borderRadius - w), background: 'transparent' }} />
+                </div>
+            );
+        }
+        return (
+            <div style={{
+                width: '100%', height: '100%', borderRadius, boxSizing: 'border-box', opacity,
+                background: 'transparent',
+                border: `${w}px solid ${color}`,
+                boxShadow: fs === 'glow' ? `0 0 ${w * 4}px ${color}, inset 0 0 ${w * 2}px ${color}55` : 'none',
+            }} />
+        );
     }
 
     // ── Divider ──

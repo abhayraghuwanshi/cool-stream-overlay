@@ -51,6 +51,7 @@ const ELEMENT_TYPES = [
     )},
     { type: 'clock',      label: 'Clock',      color: '#84cc16', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#84cc16', letterSpacing: -0.5 }}>00:00</span> },
     { type: 'countdown',  label: 'Countdown',  color: '#14b8a6', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#14b8a6', letterSpacing: -0.5 }}>05:00</span> },
+    { type: 'frame',      label: 'Cam Frame',  color: '#818cf8', preview: <span style={{ width: 20, height: 14, border: '2px solid #818cf8', borderRadius: 3, display: 'block', boxShadow: '0 0 4px #818cf8' }} /> },
 ];
 
 const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]));
@@ -81,7 +82,7 @@ const ZBtn = ({ onClick, title, children }) => (
     </button>
 );
 
-const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, onDelete, onLayerUp, onLayerDown }) => (
+const LayerRow = ({ icon, label, color, visible, selected, live, onToggle, onSelect, onDelete, onLayerUp, onLayerDown }) => (
     <div
         onClick={onSelect}
         style={{
@@ -108,6 +109,15 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
         >
             {visible ? <EyeOn /> : <EyeOff />}
         </button>
+
+        {/* Live status dot (cameras only) */}
+        {live !== undefined && (
+            <span title={live ? 'Live' : 'No device'} style={{
+                width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                background: live ? '#22c55e' : 'rgba(255,255,255,0.18)',
+                boxShadow: live ? '0 0 5px rgba(34,197,94,0.6)' : 'none',
+            }} />
+        )}
 
         {/* Icon */}
         <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1, filter: visible ? 'none' : 'grayscale(1)' }}>
@@ -277,11 +287,7 @@ const ScenesSection = ({ scenes, onApply, onSave, onDelete }) => {
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-const CAMERA_ROWS = [
-    { slot: 'faceCam', label: 'Face' },
-    { slot: 'handCam', label: 'Hand' },
-    { slot: 'roomCam', label: 'Room' },
-];
+const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
 
 const LayersPanel = ({
     // Built-in box visibility
@@ -306,14 +312,8 @@ const LayersPanel = ({
     onOpenBackground,
     onOpenTheme,
     onResetLayout,
-    // Camera / device props
-    devices = { cameras: [], mics: [] },
+    // Camera live status (device assignment lives in the right panel now)
     streams = {},
-    selectedDevices = {},
-    setSelectedDevice,
-    startCameraStream,
-    stopCameraStream,
-    errors = {},
     // Z-order
     zOrder = [],
     onLayerUp,
@@ -368,98 +368,62 @@ const LayersPanel = ({
                 <ScenesSection scenes={scenes} onApply={onApplyScene} onSave={onSaveScene} onDelete={onDeleteScene} />
                 <Divider />
 
-                {/* ── Cameras ── */}
-                <SectionLabel>Cameras</SectionLabel>
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
-                    {CAMERA_ROWS.map(({ slot, label }) => {
-                        const active = !!streams[slot];
-                        const hasDevice = !!selectedDevices[slot];
-                        return (
-                            <div key={slot}>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 4px' }}>
-                                    <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: active ? '#22c55e' : 'rgba(255,255,255,0.14)', boxShadow: active ? '0 0 5px rgba(34,197,94,0.6)' : 'none' }} />
-                                    <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.35)', width: 26, flexShrink: 0 }}>{label}</span>
-                                    <select
-                                        style={{ flex: 1, background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', minWidth: 0, outline: 'none', cursor: 'pointer' }}
-                                        value={selectedDevices[slot] ?? ''}
-                                        onChange={e => setSelectedDevice?.(slot, e.target.value)}
-                                    >
-                                        <option value="" style={{ background: '#1a1a2e', color: '#fff' }}>— select —</option>
-                                        {devices.cameras.map(c => <option key={c.deviceId} value={c.deviceId} style={{ background: '#1a1a2e', color: '#fff' }}>{c.label}</option>)}
-                                    </select>
-                                    <button
-                                        onClick={() => active ? stopCameraStream?.(slot) : startCameraStream?.(slot, selectedDevices[slot])}
-                                        disabled={!active && !hasDevice}
-                                        style={{ padding: '2px 6px', borderRadius: 4, fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', border: '1px solid', cursor: (!active && !hasDevice) ? 'not-allowed' : 'pointer', opacity: (!active && !hasDevice) ? 0.4 : 1, flexShrink: 0, ...(active ? { background: 'rgba(127,29,29,0.4)', borderColor: 'rgba(239,68,68,0.3)', color: '#fca5a5' } : { background: 'rgba(30,30,60,0.4)', borderColor: 'rgba(99,102,241,0.25)', color: '#a5b4fc' }) }}
-                                    >{active ? 'Stop' : 'Start'}</button>
-                                </div>
-                                {errors?.[slot] && <div style={{ fontSize: 7, color: '#f87171', paddingLeft: 18 }}>{errors[slot]}</div>}
-                            </div>
-                        );
-                    })}
+                {/* ── Unified Layers list ── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 8px 4px' }}>
+                    <button
+                        onClick={() => setShowAddPanel(v => !v)}
+                        title="Add element"
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 3,
+                            background: showAddPanel ? 'rgba(99,102,241,0.22)' : 'transparent',
+                            border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc',
+                            borderRadius: 6, fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                            padding: '3px 7px', cursor: 'pointer',
+                        }}
+                    >
+                        <Plus size={10} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }} /> Add
+                    </button>
                 </div>
-                <Divider />
 
-                {/* ── Built-in layers sorted by z-order (top of list = on top) ── */}
-                <Divider />
-                <SectionLabel>Canvas</SectionLabel>
+                {/* Built-in boxes (cameras + panels), sorted front → back */}
                 {[...BUILTIN_LAYERS]
                     .sort((a, b) => zRank(b.id) - zRank(a.id))
-                    .map(layer => (
+                    .map(layer => {
+                        const isCam = CAMERA_IDS.includes(layer.id);
+                        return (
+                            <LayerRow
+                                key={layer.id}
+                                icon={<layer.Icon size={13} color={layer.color} />}
+                                label={layer.label}
+                                color={layer.color}
+                                visible={boxVisibility[layer.id] ?? true}
+                                selected={selectedBox === layer.id}
+                                live={isCam ? !!streams[layer.id] : undefined}
+                                onSelect={() => onSelectBox(layer.id)}
+                                onToggle={() => onToggleBuiltin(layer.id)}
+                                onLayerUp={() => onLayerUp?.(layer.id)}
+                                onLayerDown={() => onLayerDown?.(layer.id)}
+                            />
+                        );
+                    })}
+
+                {/* Custom elements (rendered above boxes on the canvas) */}
+                {elements.map((el) => {
+                    const typeInfo = ELEMENT_TYPE_MAP[el.type];
+                    return (
                         <LayerRow
-                            key={layer.id}
-                            icon={<layer.Icon size={13} color={layer.color} />}
-                            label={layer.label}
-                            color={layer.color}
-                            visible={boxVisibility[layer.id] ?? true}
-                            selected={selectedBox === layer.id}
-                            onSelect={() => onSelectBox(layer.id)}
-                            onToggle={() => onToggleBuiltin(layer.id)}
-                            onLayerUp={() => onLayerUp?.(layer.id)}
-                            onLayerDown={() => onLayerDown?.(layer.id)}
+                            key={el.id}
+                            icon={typeInfo?.preview ?? el.type.charAt(0).toUpperCase()}
+                            label={el.content || typeInfo?.label || el.type}
+                            color={typeInfo?.color ?? '#6b7280'}
+                            visible={!el.hidden}
+                            selected={selectedElementId === el.id}
+                            onSelect={() => onSelectElement(el.id)}
+                            onToggle={() => onToggleElement(el.id)}
+                            onDelete={() => onDeleteElement(el.id)}
                         />
-                    ))}
-
-                {/* ── Custom elements ── */}
-                {elements.length > 0 && (
-                    <>
-                        <Divider />
-                        <SectionLabel>Elements</SectionLabel>
-                        {elements.map((el) => {
-                            const typeInfo = ELEMENT_TYPE_MAP[el.type];
-                            return (
-                                <LayerRow
-                                    key={el.id}
-                                    icon={typeInfo?.preview ?? el.type.charAt(0).toUpperCase()}
-                                    label={el.content || typeInfo?.label || el.type}
-                                    color={typeInfo?.color ?? '#6b7280'}
-                                    visible={!el.hidden}
-                                    selected={selectedElementId === el.id}
-                                    onSelect={() => onSelectElement(el.id)}
-                                    onToggle={() => onToggleElement(el.id)}
-                                    onDelete={() => onDeleteElement(el.id)}
-                                />
-                            );
-                        })}
-                    </>
-                )}
-
-                {/* ── Add element ── */}
-                <Divider />
-                <button
-                    onClick={() => setShowAddPanel(v => !v)}
-                    style={{
-                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '6px 8px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                        background: showAddPanel ? 'rgba(99,102,241,0.15)' : 'transparent',
-                        color: showAddPanel ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
-                        fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1.5,
-                        transition: 'all 0.12s',
-                    }}
-                >
-                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Plus size={11} /> Add Element</span>
-                    <Plus size={12} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
-                </button>
+                    );
+                })}
 
                 <AnimatePresence>
                     {showAddPanel && (
