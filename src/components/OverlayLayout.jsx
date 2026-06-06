@@ -1,8 +1,9 @@
-import { AnimatePresence, motion } from 'framer-motion';
+import { motion } from 'framer-motion';
+import { Check, Circle, RotateCcw } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
 import { useOBS } from '../context/OBSContext';
-import useCapture, { formatElapsed } from '../hooks/useCapture';
+import useCapture from '../hooks/useCapture';
 import AICompanion from './AICompanion';
 import BackgroundPanel, { bgToStyle } from './BackgroundPanel';
 import CurrentTask from './CurrentTask';
@@ -10,7 +11,6 @@ import DraggableBox from './DraggableBox';
 import ElementEditor from './ElementEditor';
 import ElementRenderer, { defaultElement } from './ElementRenderer';
 import LayersPanel from './LayersPanel';
-import SettingsModal from './SettingsModal';
 import SocialFeed from './SocialFeed';
 import VideoFeed from './VideoFeed';
 
@@ -23,43 +23,7 @@ const DEFAULT_BOXES = {
     currentTask: { x: 0, y: 85, w: 80, h: 15 },
 };
 
-const DEFAULT_SCREEN_BOX = { x: 0, y: 0, w: 100, h: 100 };
-
 const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
-
-// Memoised wrapper so the VideoFeed inside a screen-capture box doesn't
-// re-render every time OverlayLayout re-renders (e.g. on box drag).
-// The `sc` object reference is stable (same object from useCapture state).
-const ScreenCaptureBox = memo(
-    (props) => {
-        if (!props || !props.sc) return null;
-        const { sc, box, zIndex, selected, editMode, canvasRef, extraStyle,
-            onBoxChange, onSelect, onLayerUp, onLayerDown } = props;
-        const boxId = `screen_${sc.slot}`;
-        return (
-            <DraggableBox
-                id={boxId} title={sc.label}
-                box={box} zIndex={zIndex} selected={selected}
-                onSelect={onSelect} onLayerUp={onLayerUp} onLayerDown={onLayerDown}
-                onBoxChange={onBoxChange} editMode={editMode} canvasRef={canvasRef}
-                extraStyle={extraStyle}
-            >
-                <VideoFeed stream={sc.stream} label={sc.label} muted fit="contain" />
-            </DraggableBox>
-        );
-    },
-    (prev, next) => {
-        const pb = prev.box, nb = next.box;
-        return (
-            prev.sc === next.sc &&
-            pb.x === nb.x && pb.y === nb.y && pb.w === nb.w && pb.h === nb.h &&
-            prev.zIndex === next.zIndex &&
-            prev.selected === next.selected &&
-            prev.editMode === next.editMode &&
-            prev.extraStyle === next.extraStyle
-        );
-    }
-);
 
 const ElementBox = memo(
     ({
@@ -133,21 +97,14 @@ const OverlayLayout = () => {
         background: { type: 'solid', color: '#0a0a0f' },
     });
 
-    const [showSettings, setShowSettings] = useState(false);
     const [showBgPanel, setShowBgPanel] = useState(false);
     const [editMode, setEditMode] = useState(false);
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
-    const [recordMode, setRecordMode] = useState('single'); // 'single' | 'multi'
 
-    const capture = useCapture({ isObsRecording: isRecording, boxes, canvasRef });
-    const {
-        streams, screens, addScreenCapture, removeScreenCapture, recording,
-        startRecording, startMultiTrackRecording, stopRecording,
-        pauseRecording, resumeRecording, discardRecording, clearRecording, downloadRecording,
-    } = capture;
-    const canStartRecording = !isRecording;
+    const capture = useCapture();
+    const { streams } = capture;
 
     // ── OBS recording — close edit panels ───────────────────────────────────────
     useEffect(() => {
@@ -198,6 +155,63 @@ const OverlayLayout = () => {
             body: JSON.stringify({ boxes: DEFAULT_BOXES, _clientId: SESSION_ID }),
         }).catch(console.error);
     }, []);
+
+    // ── Scenes ───────────────────────────────────────────────────────────────
+    // A scene snapshot = { boxes, boxVisibility, elements, background, zOrder }.
+    // Applying replaces the whole visual layout in one shot (and persists it).
+    // Camera device streams are untouched — a scene only positions/shows boxes.
+    const applyScene = useCallback((snapshot = {}) => {
+        const nBoxes = { ...DEFAULT_BOXES, ...(snapshot.boxes ?? {}) };
+        const nVis   = { ...DEFAULT_VISIBILITY, ...(snapshot.boxVisibility ?? {}) };
+        const nEls   = snapshot.elements ?? [];
+        const nBg    = snapshot.background ?? { type: 'solid', color: '#0a0a0f' };
+        const nZ     = snapshot.zOrder ?? Object.keys(DEFAULT_BOXES);
+
+        boxesRef.current = nBoxes;
+        setBoxes(nBoxes);
+        setZOrder(nZ);
+        setSelectedBox(null);
+        setSelectedElementId(null);
+        setLayoutSettings(s => ({
+            ...s,
+            elements: nEls,
+            background: nBg,
+            boxVisibility: nVis,
+            showFaceCam: nVis.faceCam,
+            showHandCam: nVis.handCam,
+            showRoomCam: nVis.roomCam,
+        }));
+        fetch(`${BACKEND_HTTP}/layout`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                boxes: nBoxes, elements: nEls, background: nBg, boxVisibility: nVis,
+                showFaceCam: nVis.faceCam, showHandCam: nVis.handCam, showRoomCam: nVis.roomCam,
+                _clientId: SESSION_ID,
+            }),
+        }).catch(console.error);
+    }, []);
+
+    const saveScene = useCallback((name) => {
+        const snapshot = {
+            boxes: boxesRef.current,
+            boxVisibility: layoutSettings.boxVisibility ?? DEFAULT_VISIBILITY,
+            elements: layoutSettings.elements ?? [],
+            background: layoutSettings.background,
+            zOrder,
+        };
+        const scenes = layoutSettings.scenes ?? [];
+        const scene = {
+            id: `scene_${Date.now()}`,
+            name: (name || '').trim() || `Scene ${scenes.length + 1}`,
+            snapshot,
+        };
+        updateLayout({ scenes: [...scenes, scene] });
+    }, [zOrder, layoutSettings.boxVisibility, layoutSettings.elements, layoutSettings.background, layoutSettings.scenes, updateLayout]);
+
+    const deleteScene = useCallback((id) => {
+        updateLayout({ scenes: (layoutSettings.scenes ?? []).filter(s => s.id !== id) });
+    }, [layoutSettings.scenes, updateLayout]);
 
     // ── Element helpers ──────────────────────────────────────────────────────
     const addElement = useCallback((type) => {
@@ -259,20 +273,6 @@ const OverlayLayout = () => {
         setSelectedElementId(id);
     }, []);
 
-    // ── Sync zOrder when screens are added/removed ───────────────────────────
-    useEffect(() => {
-        setZOrder(prev => {
-            const screenIds = screens.map(sc => `screen_${sc.slot}`);
-            // Drop stale screen IDs; keep built-ins and still-active screens in place
-            const filtered = prev.filter(id => !id.startsWith('screen_') || screenIds.includes(id));
-            // Append any brand-new screen IDs at the top (highest z-index)
-            const newIds = screenIds.filter(id => !prev.includes(id));
-            return newIds.length === 0 && filtered.length === prev.length
-                ? prev
-                : [...filtered, ...newIds];
-        });
-    }, [screens]);
-
     // ── Box z-order ──────────────────────────────────────────────────────────
     const selectBox = useCallback((id) => {
         setSelectedBox(id);
@@ -321,29 +321,6 @@ const OverlayLayout = () => {
             return { ...s, ...updates };
         });
     }, []);
-
-    const handleAddScreenCapture = useCallback(async () => {
-        const screen = await addScreenCapture();
-        if (!screen) return;
-
-        const boxId = `screen_${screen.slot}`;
-        setLayoutSettings(s => ({
-            ...s,
-            boxVisibility: {
-                ...(s.boxVisibility ?? DEFAULT_VISIBILITY),
-                [boxId]: true,
-            },
-        }));
-        setBoxes(prev => {
-            if (prev[boxId]) return prev;
-            const updated = { ...prev, [boxId]: DEFAULT_SCREEN_BOX };
-            boxesRef.current = updated;
-            return updated;
-        });
-        setSelectedBox(boxId);
-        setSelectedElementId(null);
-        setZOrder(prev => [...prev.filter(id => id !== boxId), boxId]);
-    }, [addScreenCapture]);
 
     // ── Backend sync ─────────────────────────────────────────────────────────
     useEffect(() => {
@@ -427,38 +404,6 @@ const OverlayLayout = () => {
 
     const shouldRenderBox = (id) => getBoxVisible(id);
 
-    // ── Recording — close all panels BEFORE the browser dialog appears ──────
-    // Without this, the Capture panel stays visible during the picker and ends
-    // up captured in the recording (infinity-mirror effect).
-    const closeEditPanels = useCallback(async () => {
-        setEditMode(false);
-        setSelectedBox(null);
-        setSelectedElementId(null);
-        setShowBgPanel(false);
-        await new Promise(r => setTimeout(r, 120));
-    }, []);
-
-    const collectVideoEls = useCallback(() => {
-        const videoEls = {};
-        canvasRef.current?.querySelectorAll('[data-box-id]').forEach(el => {
-            const video = el.querySelector('video');
-            if (video) videoEls[el.dataset.boxId] = video;
-        });
-        return videoEls;
-    }, []);
-
-    const handleStartRecording = useCallback(async () => {
-        if (!canStartRecording) return;
-        await closeEditPanels();
-        startRecording({ background, zOrder, elements, videoEls: collectVideoEls() });
-    }, [canStartRecording, startRecording, closeEditPanels, background, zOrder, elements, collectVideoEls]);
-
-    const handleStartMultiTrack = useCallback(async () => {
-        if (!canStartRecording) return;
-        await closeEditPanels();
-        startMultiTrackRecording({ background, zOrder, elements, videoEls: collectVideoEls() });
-    }, [canStartRecording, startMultiTrackRecording, closeEditPanels, background, zOrder, elements, collectVideoEls]);
-
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
 
@@ -526,57 +471,19 @@ const OverlayLayout = () => {
                             width: 18, height: 18, borderRadius: 4, flexShrink: 0,
                             background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.45)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#a5b4fc',
-                        }}>⬤</div>
+                        }}><Circle size={8} fill="#a5b4fc" strokeWidth={0} /></div>
                         <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
                             Overlay Studio
                         </span>
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <HdrBtn onClick={() => setShowBgPanel(v => !v)} active={showBgPanel}>Background</HdrBtn>
-                        <HdrSep />
-                        <HdrBtn icon onClick={() => setShowSettings(v => !v)} active={showSettings}><SettingsIcon /></HdrBtn>
-                        <HdrSep />
-                        {recording?.active ? (
-                            <RecordingControls
-                                recording={recording}
-                                onPause={pauseRecording}
-                                onResume={resumeRecording}
-                                onSave={stopRecording}
-                                onDiscard={discardRecording}
-                            />
-                        ) : (
-                            <RecordModePill
-                                mode={recordMode}
-                                disabled={!canStartRecording}
-                                onModeChange={(m) => setRecordMode(m)}
-                                onStart={() => {
-                                    if (recordMode === 'multi') handleStartMultiTrack();
-                                    else handleStartRecording();
-                                }}
-                            />
-                        )}
-                        {recording?.blob && !recording?.active && (
-                            <>
-                                <HdrBtn onClick={() => downloadRecording(recording.blob)}>
-                                    {recording.mode === 'multi' ? '↓ Save ZIP' : '↓ Save'}
-                                </HdrBtn>
-                                <HdrBtn onClick={clearRecording}>New</HdrBtn>
-                            </>
-                        )}
-                        <HdrSep />
-                        {/* OBS pill */}
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '2px 8px', borderRadius: 4, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.06)' }}>
-                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: isConnected ? '#22c55e' : 'rgba(255,80,80,0.5)', boxShadow: isConnected ? '0 0 5px rgba(34,197,94,0.8)' : 'none' }} />
-                            <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: isConnected ? 'rgba(34,197,94,0.55)' : 'rgba(255,255,255,0.2)' }}>
-                                OBS {isConnected ? 'Live' : 'Off'}
-                            </span>
-                        </div>
+                        <HdrBtn onClick={resetLayout}><RotateCcw size={12} style={{ marginRight: 4 }} />Reset</HdrBtn>
                         <HdrSep />
                         <button
                             onClick={() => { setEditMode(false); setSelectedBox(null); setSelectedElementId(null); setShowBgPanel(false); }}
                             style={{ padding: '3px 12px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(99,102,241,0.45)', background: 'rgba(79,70,229,0.4)', color: '#fff', cursor: 'pointer' }}
-                        >✓ Done</button>
+                        ><Check size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 3 }} />Done</button>
                     </div>
                 </div>
 
@@ -597,9 +504,10 @@ const OverlayLayout = () => {
                         onSelectElement={selectElement}
                         onSelectBox={selectBox}
                         onAddElement={addElement}
-                        screens={screens}
-                        onAddScreen={handleAddScreenCapture}
-                        onRemoveScreen={removeScreenCapture}
+                        scenes={layoutSettings.scenes ?? []}
+                        onApplyScene={applyScene}
+                        onSaveScene={saveScene}
+                        onDeleteScene={deleteScene}
                         onOpenBackground={() => setShowBgPanel(v => !v)}
                         onResetLayout={resetLayout}
                         devices={capture.devices}
@@ -639,22 +547,6 @@ const OverlayLayout = () => {
                     />
                 )}
             </>)}
-
-            {/* Settings modal — always in fixed overlay */}
-            <AnimatePresence>
-                {showSettings && (
-                    <SettingsModal
-                        onClose={() => setShowSettings(false)}
-                        showFaceCam={showFaceCam} setShowFaceCam={(v) => updateLayout({ showFaceCam: v, boxVisibility: { ...boxVisibility, faceCam: v } })}
-                        showHandCam={showHandCam} setShowHandCam={(v) => updateLayout({ showHandCam: v, boxVisibility: { ...boxVisibility, handCam: v } })}
-                        showRoomCam={showRoomCam} setShowRoomCam={(v) => updateLayout({ showRoomCam: v, boxVisibility: { ...boxVisibility, roomCam: v } })}
-                        socialGithub={socialGithub} setSocialGithub={(v) => updateLayout({ socialGithub: v })}
-                        socialTwitter={socialTwitter} setSocialTwitter={(v) => updateLayout({ socialTwitter: v })}
-                        socialLinkedin={socialLinkedin} setSocialLinkedin={(v) => updateLayout({ socialLinkedin: v })}
-                        useGPU={useGPU} setUseGPU={(v) => updateLayout({ useGPU: v })}
-                    />
-                )}
-            </AnimatePresence>
 
             {/* ── CANVAS POSITIONING WRAPPER ── */}
             {/* In editor: offset by header + left/right panels, canvas is 16:9 preview */}
@@ -720,13 +612,6 @@ const OverlayLayout = () => {
                         );
                     })}
 
-                    {/* ── Screen Captures ── */}
-                    {screens.map(sc => {
-                        const boxId = `screen_${sc.slot}`;
-                        if (!getBoxVisible(boxId)) return null;
-                        return <ScreenCaptureBox key={boxId} sc={sc} box={boxes[boxId] ?? DEFAULT_SCREEN_BOX} zIndex={getZIndex(boxId)} selected={selectedBox === boxId} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef} />;
-                    })}
-
                     {shouldRenderBox('faceCam') && <DraggableBox id="faceCam" title="Face Cam" box={boxes.faceCam} zIndex={getZIndex('faceCam')} selected={selectedBox === 'faceCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{faceCamChild}</DraggableBox>}
                     {shouldRenderBox('socialFeed') && <DraggableBox id="socialFeed" title="Social Feed" box={boxes.socialFeed} zIndex={getZIndex('socialFeed')} selected={selectedBox === 'socialFeed'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{socialFeedChild}</DraggableBox>}
                     {shouldRenderBox('aiCompanion') && <DraggableBox id="aiCompanion" title="AI Companion" box={boxes.aiCompanion} zIndex={getZIndex('aiCompanion')} selected={selectedBox === 'aiCompanion'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{aiCompanionChild}</DraggableBox>}
@@ -741,151 +626,12 @@ const OverlayLayout = () => {
                 <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
                         <DockBtn onClick={() => setEditMode(true)}>Edit Layout</DockBtn>
-                        <DockSep />
-                        {recording?.active ? (
-                            <RecordingControls
-                                recording={recording}
-                                onPause={pauseRecording}
-                                onResume={resumeRecording}
-                                onSave={stopRecording}
-                                onDiscard={discardRecording}
-                            />
-                        ) : (
-                            <RecordModePill
-                                mode={recordMode}
-                                disabled={!canStartRecording}
-                                onModeChange={(m) => setRecordMode(m)}
-                                onStart={() => {
-                                    if (recordMode === 'multi') handleStartMultiTrack();
-                                    else handleStartRecording();
-                                }}
-                            />
-                        )}
-                        {recording?.blob && !recording?.active && (
-                            <><DockSep />
-                            <button
-                                onClick={() => downloadRecording(recording.blob)}
-                                style={{ padding: '4px 12px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(16,185,129,0.45)', background: 'rgba(6,78,59,0.55)', color: '#6ee7b7', cursor: 'pointer', display: 'flex', alignItems: 'center', gap: 5 }}>
-                                <span>↓</span> {recording.mode === 'multi' ? 'Export ZIP' : 'Export'}
-                            </button>
-                            <button onClick={clearRecording} style={{ padding: '4px 8px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(255,255,255,0.07)', background: 'transparent', color: 'rgba(255,255,255,0.3)', cursor: 'pointer' }}>
-                                Discard
-                            </button></>
-                        )}
-                        <DockSep />
-                        <div style={{ display: 'flex', alignItems: 'center', gap: 4, padding: '4px 4px 4px 2px' }}>
-                            <div style={{ width: 5, height: 5, borderRadius: '50%', background: isConnected ? '#22c55e' : 'rgba(255,80,80,0.5)', boxShadow: isConnected ? '0 0 5px rgba(34,197,94,0.75)' : 'none' }} />
-                            <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: isConnected ? 'rgba(34,197,94,0.5)' : 'rgba(255,255,255,0.2)' }}>OBS</span>
-                        </div>
                     </div>
                 </div>
             )}
         </div>
     );
 };
-
-// Segmented toggle pill — clicking a segment selects that mode and starts recording.
-// The last-used mode stays highlighted so repeat recordings need only one click.
-const RecordModePill = ({ mode, disabled, onModeChange, onStart }) => {
-    const seg = (m, label, activeBg, activeColor, dotColor) => (
-        <button
-            onClick={() => !disabled && onModeChange(m)}
-            disabled={disabled}
-            style={{
-                padding: '4px 9px',
-                fontSize: 9,
-                fontFamily: 'monospace',
-                textTransform: 'uppercase',
-                letterSpacing: 1,
-                border: 'none',
-                outline: 'none',
-                cursor: disabled ? 'not-allowed' : 'pointer',
-                display: 'flex', alignItems: 'center', gap: 5,
-                transition: 'background 0.15s, color 0.15s',
-                background: mode === m ? activeBg : 'rgba(255,255,255,0.04)',
-                color:      mode === m ? activeColor : 'rgba(255,255,255,0.28)',
-                lineHeight: 1,
-            }}
-        >
-            <span style={{
-                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: mode === m ? dotColor : 'rgba(255,255,255,0.15)',
-                boxShadow:  mode === m ? `0 0 5px ${dotColor}` : 'none',
-                transition: 'background 0.15s',
-            }} />
-            {label}
-        </button>
-    );
-
-    return (
-        <div style={{ display: 'flex', alignItems: 'center', gap: 4, opacity: disabled ? 0.45 : 1, transition: 'opacity 0.2s' }}>
-            <div style={{
-                display: 'flex',
-                borderRadius: 7,
-                border: '1px solid rgba(255,255,255,0.08)',
-                overflow: 'hidden',
-            }}>
-                {seg('single', 'Rec',   'rgba(100,20,20,0.55)', '#fca5a5', '#ef4444')}
-                <div style={{ width: 1, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />
-                {seg('multi',  'Multi', 'rgba(60,10,80,0.6)',   '#d8b4fe', '#a855f7')}
-            </div>
-            <button
-                onClick={() => !disabled && onStart()}
-                disabled={disabled}
-                style={{
-                    padding: '4px 11px',
-                    borderRadius: 7,
-                    fontSize: 9,
-                    fontFamily: 'monospace',
-                    textTransform: 'uppercase',
-                    letterSpacing: 1,
-                    border: mode === 'multi' ? '1px solid rgba(168,85,247,0.45)' : '1px solid rgba(239,68,68,0.45)',
-                    background: mode === 'multi' ? 'rgba(80,20,110,0.55)' : 'rgba(120,20,20,0.55)',
-                    color: mode === 'multi' ? '#d8b4fe' : '#fca5a5',
-                    cursor: disabled ? 'not-allowed' : 'pointer',
-                    display: 'flex', alignItems: 'center', gap: 5,
-                    transition: 'background 0.15s, border-color 0.15s',
-                    lineHeight: 1,
-                }}
-            >
-                <span style={{ fontSize: 8 }}>▶</span> Start
-            </button>
-        </div>
-    );
-};
-
-const RecordingControls = ({ recording, onPause, onResume, onSave, onDiscard }) => (
-    <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
-        {/* Pulsing indicator + elapsed */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5, padding: '3px 8px', borderRadius: 6, background: recording.paused ? 'rgba(245,158,11,0.1)' : 'rgba(239,68,68,0.1)', border: `1px solid ${recording.paused ? 'rgba(245,158,11,0.25)' : 'rgba(239,68,68,0.25)'}` }}>
-            <span style={{
-                width: 6, height: 6, borderRadius: '50%', flexShrink: 0,
-                background: recording.paused ? '#f59e0b' : '#ef4444',
-                boxShadow: recording.paused ? 'none' : '0 0 6px rgba(239,68,68,0.9)',
-                animation: recording.paused ? 'none' : 'pulse 1.2s ease-in-out infinite',
-            }} />
-            <span style={{ fontSize: 9, fontFamily: 'monospace', letterSpacing: 1, color: recording.paused ? '#fcd34d' : '#fca5a5' }}>
-                {recording.paused ? 'PAUSED' : recording.mode === 'multi' ? 'MULTI' : 'REC'}
-            </span>
-            <span style={{ fontSize: 10, fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)', minWidth: 44, textAlign: 'right' }}>
-                {formatElapsed(recording.elapsed)}
-            </span>
-        </div>
-        <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.07)', margin: '0 1px', flexShrink: 0 }} />
-        {/* Pause / Resume */}
-        <button onClick={recording.paused ? onResume : onPause} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(99,102,241,0.35)', background: 'rgba(79,70,229,0.3)', color: '#c7d2fe', cursor: 'pointer' }}>
-            {recording.paused ? '▶ Resume' : '⏸ Pause'}
-        </button>
-        {/* Stop & Save */}
-        <button onClick={onSave} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(16,185,129,0.35)', background: 'rgba(6,78,59,0.38)', color: '#6ee7b7', cursor: 'pointer' }}>
-            ■ Stop
-        </button>
-        {/* Discard */}
-        <button onClick={onDiscard} style={{ padding: '4px 7px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid rgba(239,68,68,0.25)', background: 'transparent', color: 'rgba(252,165,165,0.5)', cursor: 'pointer' }}>
-            ✕
-        </button>
-    </div>
-);
 
 const HdrBtn = ({ children, active, icon, onClick }) => (
     <button onClick={onClick} style={{ padding: icon ? '3px 6px' : '3px 9px', borderRadius: 5, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, border: '1px solid', cursor: 'pointer', display: 'flex', alignItems: 'center', transition: 'all 0.1s', ...(active ? { background: 'rgba(99,102,241,0.2)', borderColor: 'rgba(99,102,241,0.4)', color: '#a5b4fc' } : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.38)' }) }}>
@@ -895,7 +641,7 @@ const HdrBtn = ({ children, active, icon, onClick }) => (
 
 const HdrSep = () => <div style={{ width: 1, height: 14, background: 'rgba(255,255,255,0.07)', flexShrink: 0 }} />;
 
-const DockBtn = ({ children, active, rec, multi, icon, disabled, onClick, title }) => (
+const DockBtn = ({ children, active, icon, disabled, onClick, title }) => (
     <button
         onClick={onClick}
         disabled={disabled}
@@ -913,29 +659,14 @@ const DockBtn = ({ children, active, rec, multi, icon, disabled, onClick, title 
             transition: 'all 0.12s',
             display: 'flex', alignItems: 'center', gap: 4,
             lineHeight: 1,
-            ...(rec
-                ? { background: 'rgba(100,20,20,0.45)', borderColor: 'rgba(239,68,68,0.32)', color: '#fca5a5' }
-                : multi
-                    ? { background: 'rgba(60,10,80,0.5)', borderColor: 'rgba(168,85,247,0.35)', color: '#d8b4fe' }
-                    : active
-                        ? { background: 'rgba(79,70,229,0.52)', borderColor: 'rgba(99,102,241,0.5)', color: '#fff' }
-                        : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)' }
+            ...(active
+                ? { background: 'rgba(79,70,229,0.52)', borderColor: 'rgba(99,102,241,0.5)', color: '#fff' }
+                : { background: 'transparent', borderColor: 'rgba(255,255,255,0.07)', color: 'rgba(255,255,255,0.45)' }
             ),
         }}
     >
         {children}
     </button>
-);
-
-const DockSep = () => (
-    <div style={{ width: 1, height: 16, background: 'rgba(255,255,255,0.07)', margin: '0 3px', flexShrink: 0 }} />
-);
-
-const SettingsIcon = () => (
-    <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-        <path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.1a2 2 0 0 1-1-1.74v-.51a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
-        <circle cx="12" cy="12" r="3" />
-    </svg>
 );
 
 export default OverlayLayout;

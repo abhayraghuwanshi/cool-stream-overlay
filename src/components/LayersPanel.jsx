@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { Bot, Camera, ChevronDown, ChevronUp, ListChecks, Monitor, Plus, Rss, Video, X } from 'lucide-react';
 import { useState } from 'react';
+import { SCENE_PRESETS } from '../scenes/presets';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -22,15 +24,13 @@ const TrashIcon = () => (
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
-const SCREEN_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'];
-
 const BUILTIN_LAYERS = [
-    { id: 'faceCam',       label: 'Face Cam',     color: '#8b5cf6', icon: '📷' },
-    { id: 'handCam',       label: 'Hand Cam',     color: '#a78bfa', icon: '✋' },
-    { id: 'roomCam',       label: 'Room Cam',     color: '#c4b5fd', icon: '🏠' },
-    { id: 'socialFeed',    label: 'Social Feed',  color: '#0ea5e9', icon: '📡' },
-    { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', icon: '🤖' },
-    { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', icon: '✅' },
+    { id: 'faceCam',       label: 'Face Cam',     color: '#8b5cf6', Icon: Camera },
+    { id: 'handCam',       label: 'Hand Cam',     color: '#a78bfa', Icon: Video },
+    { id: 'roomCam',       label: 'Room Cam',     color: '#c4b5fd', Icon: Monitor },
+    { id: 'socialFeed',    label: 'Social Feed',  color: '#0ea5e9', Icon: Rss },
+    { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', Icon: Bot },
+    { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', Icon: ListChecks },
 ];
 
 const ELEMENT_TYPES = [
@@ -125,8 +125,8 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
         {/* Z-order buttons (visible when selected) */}
         {selected && (onLayerUp || onLayerDown) && (
             <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(); }} title="Move up (on top)">▲</ZBtn>
-                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(); }} title="Move down (behind)">▼</ZBtn>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(); }} title="Move up (on top)"><ChevronUp size={9} /></ZBtn>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(); }} title="Move down (behind)"><ChevronDown size={9} /></ZBtn>
             </span>
         )}
 
@@ -181,6 +181,99 @@ const ElementTypeCard = ({ type, label, color, preview, onClick }) => (
     </button>
 );
 
+// ── Scenes ──────────────────────────────────────────────────────────────────
+
+const SceneChip = ({ label, accent = '#6366f1', onClick, onDelete }) => (
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+            onClick={onClick}
+            title={`Apply "${label}"`}
+            style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: onDelete ? '4px 18px 4px 8px' : '4px 8px',
+                borderRadius: 7,
+                background: `${accent}14`,
+                border: `1px solid ${accent}40`,
+                color: 'rgba(255,255,255,0.78)',
+                fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5,
+                cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = `${accent}28`; }}
+            onMouseLeave={e => { e.currentTarget.style.background = `${accent}14`; }}
+        >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, flexShrink: 0, boxShadow: `0 0 5px ${accent}aa` }} />
+            {label}
+        </button>
+        {onDelete && (
+            <button
+                title="Delete scene"
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                style={{
+                    position: 'absolute', right: 3, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+            >
+                <X size={10} />
+            </button>
+        )}
+    </div>
+);
+
+const ScenesSection = ({ scenes, onApply, onSave, onDelete }) => {
+    const [adding, setAdding] = useState(false);
+    const [name, setName] = useState('');
+
+    const commit = () => { onSave?.(name); setName(''); setAdding(false); };
+    const cancel = () => { setName(''); setAdding(false); };
+
+    return (
+        <>
+            <SectionLabel>Scenes</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '2px 2px 6px' }}>
+                {SCENE_PRESETS.map(p => (
+                    <SceneChip key={p.id} label={p.name} accent={p.accent} onClick={() => onApply?.(p.snapshot)} />
+                ))}
+                {scenes.map(s => (
+                    <SceneChip key={s.id} label={s.name} accent="#64748b" onClick={() => onApply?.(s.snapshot)} onDelete={() => onDelete?.(s.id)} />
+                ))}
+            </div>
+            {adding ? (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                    <input
+                        autoFocus
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+                        placeholder="Scene name…"
+                        style={{
+                            flex: 1, minWidth: 0, background: '#1a1a2e', border: '1px solid rgba(99,102,241,0.35)',
+                            borderRadius: 6, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '4px 6px', outline: 'none',
+                        }}
+                    />
+                    <button onClick={commit} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(79,70,229,0.5)', border: '1px solid rgba(99,102,241,0.5)', color: '#fff', cursor: 'pointer', flexShrink: 0 }}>Save</button>
+                    <button onClick={cancel} style={{ padding: '4px 6px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', flexShrink: 0 }}><X size={11} /></button>
+                </div>
+            ) : (
+                <button
+                    onClick={() => setAdding(true)}
+                    style={{
+                        width: '100%', padding: '5px 8px', borderRadius: 7, marginBottom: 4,
+                        fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                        background: 'rgba(99,102,241,0.1)', border: '1px dashed rgba(99,102,241,0.35)',
+                        color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                    }}
+                >
+                    <Plus size={11} /> Save current layout
+                </button>
+            )}
+        </>
+    );
+};
+
 // ── Main panel ────────────────────────────────────────────────────────────────
 
 const CAMERA_ROWS = [
@@ -203,10 +296,11 @@ const LayersPanel = ({
     onSelectBox,
     // Add element
     onAddElement,
-    // Multi-screen captures
-    screens,
-    onAddScreen,
-    onRemoveScreen,
+    // Scenes
+    scenes = [],
+    onApplyScene,
+    onSaveScene,
+    onDeleteScene,
     // Background / Reset
     onOpenBackground,
     onResetLayout,
@@ -268,6 +362,10 @@ const LayersPanel = ({
             {/* ── Scrollable body ── */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
 
+                {/* ── Scenes ── */}
+                <ScenesSection scenes={scenes} onApply={onApplyScene} onSave={onSaveScene} onDelete={onDeleteScene} />
+                <Divider />
+
                 {/* ── Cameras ── */}
                 <SectionLabel>Cameras</SectionLabel>
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 4, marginBottom: 4 }}>
@@ -280,12 +378,12 @@ const LayersPanel = ({
                                     <span style={{ width: 6, height: 6, borderRadius: '50%', flexShrink: 0, background: active ? '#22c55e' : 'rgba(255,255,255,0.14)', boxShadow: active ? '0 0 5px rgba(34,197,94,0.6)' : 'none' }} />
                                     <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.35)', width: 26, flexShrink: 0 }}>{label}</span>
                                     <select
-                                        style={{ flex: 1, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', minWidth: 0, outline: 'none', cursor: 'pointer' }}
+                                        style={{ flex: 1, background: '#1a1a2e', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 4, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '2px 4px', minWidth: 0, outline: 'none', cursor: 'pointer' }}
                                         value={selectedDevices[slot] ?? ''}
                                         onChange={e => setSelectedDevice?.(slot, e.target.value)}
                                     >
-                                        <option value="">— select —</option>
-                                        {devices.cameras.map(c => <option key={c.deviceId} value={c.deviceId}>{c.label}</option>)}
+                                        <option value="" style={{ background: '#1a1a2e', color: '#fff' }}>— select —</option>
+                                        {devices.cameras.map(c => <option key={c.deviceId} value={c.deviceId} style={{ background: '#1a1a2e', color: '#fff' }}>{c.label}</option>)}
                                     </select>
                                     <button
                                         onClick={() => active ? stopCameraStream?.(slot) : startCameraStream?.(slot, selectedDevices[slot])}
@@ -300,46 +398,6 @@ const LayersPanel = ({
                 </div>
                 <Divider />
 
-                {/* ── Displays ── */}
-                <SectionLabel>Displays</SectionLabel>
-                {[...screens]
-                    .sort((a, b) => zRank(`screen_${b.slot}`) - zRank(`screen_${a.slot}`))
-                    .map(sc => {
-                        const boxId = `screen_${sc.slot}`;
-                        const color = SCREEN_COLORS[sc.slot] ?? '#6366f1';
-                        const visible = boxVisibility[boxId] ?? true;
-                        return (
-                            <LayerRow
-                                key={sc.slot}
-                                icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />}
-                                label={sc.label}
-                                color={color}
-                                visible={visible}
-                                selected={selectedBox === boxId}
-                                onSelect={() => onSelectBox(boxId)}
-                                onToggle={() => onToggleBuiltin(boxId)}
-                                onDelete={() => onRemoveScreen(sc.slot)}
-                                onLayerUp={() => onLayerUp?.(boxId)}
-                                onLayerDown={() => onLayerDown?.(boxId)}
-                            />
-                        );
-                    })}
-                <button
-                    onClick={onAddScreen}
-                    disabled={screens.length >= 4}
-                    style={{
-                        width: '100%', padding: '5px 8px', borderRadius: 7, marginBottom: 4,
-                        fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
-                        background: screens.length < 4 ? 'rgba(99,102,241,0.1)' : 'rgba(255,255,255,0.02)',
-                        border: `1px dashed ${screens.length < 4 ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                        color: screens.length < 4 ? '#a5b4fc' : 'rgba(255,255,255,0.18)',
-                        cursor: screens.length < 4 ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.12s', textAlign: 'left',
-                    }}
-                >
-                    {screens.length >= 4 ? 'Max 4 displays' : '+ Add Display'}
-                </button>
-
                 {/* ── Built-in layers sorted by z-order (top of list = on top) ── */}
                 <Divider />
                 <SectionLabel>Canvas</SectionLabel>
@@ -348,7 +406,7 @@ const LayersPanel = ({
                     .map(layer => (
                         <LayerRow
                             key={layer.id}
-                            icon={layer.icon}
+                            icon={<layer.Icon size={13} color={layer.color} />}
                             label={layer.label}
                             color={layer.color}
                             visible={boxVisibility[layer.id] ?? true}
@@ -397,8 +455,8 @@ const LayersPanel = ({
                         transition: 'all 0.12s',
                     }}
                 >
-                    <span>+ Add Element</span>
-                    <span style={{ fontSize: 14, lineHeight: 1, transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }}>+</span>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 5 }}><Plus size={11} /> Add Element</span>
+                    <Plus size={12} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s', flexShrink: 0 }} />
                 </button>
 
                 <AnimatePresence>
