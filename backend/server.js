@@ -11,56 +11,45 @@ const { PORTS } = await import(`file://${join(__dirname, '..', 'ports.config.js'
 let chat, loadModel, getStatus, getAvailableModels, downloadModel, unloadModel, onProgress;
 // Import your existing Local LLM script natively from the local file!
 const llmPath = './locaLLM.js';
+let llmModulePromise = null;
 
-async function setupLLM() {
-    try {
-        console.log('Loading local LLM module...');
-        const localLLM = await import(llmPath);
-        chat = localLLM.chat;
-        loadModel = localLLM.loadModel;
-        getStatus = localLLM.getStatus;
-        getAvailableModels = localLLM.getAvailableModels;
-        downloadModel = localLLM.downloadModel;
-        unloadModel = localLLM.unloadModel;
-        onProgress = localLLM.onProgress;
+async function ensureLLMModule() {
+    if (llmModulePromise) return llmModulePromise;
 
-        if (onProgress) {
-            onProgress((type, progress, modelName, error) => {
-                broadcast(JSON.stringify({
-                    type: 'llm-progress',
-                    payload: { type, progress, modelName, error }
-                }));
-            });
-        }
+    llmModulePromise = (async () => {
+        try {
+            console.log('Loading local LLM module on demand...');
+            const localLLM = await import(llmPath);
+            chat = localLLM.chat;
+            loadModel = localLLM.loadModel;
+            getStatus = localLLM.getStatus;
+            getAvailableModels = localLLM.getAvailableModels;
+            downloadModel = localLLM.downloadModel;
+            unloadModel = localLLM.unloadModel;
+            onProgress = localLLM.onProgress;
 
-        console.log('Initializing Llama.cpp...');
-        await localLLM.initializeLLM();
-
-        const models = getAvailableModels ? getAvailableModels() : {};
-        let modelToLoad = null;
-
-        // Check if the user already has ANY model downloaded locally
-        for (const [modelKey, modelInfo] of Object.entries(models)) {
-            if (modelInfo.downloaded) {
-                modelToLoad = modelKey;
-                break;
+            if (onProgress) {
+                onProgress((type, progress, modelName, error) => {
+                    broadcast(JSON.stringify({
+                        type: 'llm-progress',
+                        payload: { type, progress, modelName, error }
+                    }));
+                });
             }
-        }
 
-        if (modelToLoad) {
-            console.log(`Found existing downloaded model. Auto-loading: ${modelToLoad}...`);
-            await loadModel(modelToLoad);
-            console.log('✅ Local LLM is completely ready! Send a message from the extension.');
-        } else {
-            console.log('⚠️ No AI models downloaded yet. Please download one from the Local AI Settings tab.');
+            console.log('Local LLM module ready. Model loading is manual.');
+        } catch (e) {
+            llmModulePromise = null;
+            console.error('Failed to prepare Local LLM module:', e);
         }
-    } catch (e) {
-        console.error('❌ Failed to initialize Local LLM:', e);
-    }
+    })();
+
+    return llmModulePromise;
 }
 
-// Start booting up the LLM in the background when the server starts
-setupLLM();
+// Local LLM is intentionally lazy. Do not initialize llama.cpp or load a model
+// on server startup; slow laptops should stay responsive until the user clicks
+// Download/Load in the Local AI settings.
 
 const layoutSettingsFile = './layout-settings.json';
 let layoutSettings = {
@@ -86,7 +75,7 @@ function saveLayoutSettings() {
     }
 }
 
-const server = http.createServer((req, res) => {
+const server = http.createServer(async (req, res) => {
     // Basic CORS
     res.setHeader('Access-Control-Allow-Origin', '*');
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
@@ -106,11 +95,19 @@ const server = http.createServer((req, res) => {
 
     if (req.method === 'GET' && req.url === '/llm/status') {
         res.writeHead(200, { 'Content-Type': 'application/json' });
-        res.end(JSON.stringify(getStatus ? getStatus() : { initialized: false }));
+        res.end(JSON.stringify(getStatus ? getStatus() : {
+            initialized: false,
+            modelLoaded: false,
+            currentModel: null,
+            isLoading: false,
+            loadProgress: 0,
+            lazy: true
+        }));
         return;
     }
 
     if (req.method === 'GET' && req.url === '/llm/models') {
+        await ensureLLMModule();
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify(getAvailableModels ? getAvailableModels() : {}));
         return;
@@ -131,6 +128,7 @@ const server = http.createServer((req, res) => {
 
             if (req.url === '/llm/download') {
                 try {
+                    await ensureLLMModule();
                     if (downloadModel) {
                         downloadModel(data.modelName).catch(e => console.error(e));
                     }
@@ -145,6 +143,7 @@ const server = http.createServer((req, res) => {
 
             if (req.url === '/llm/load') {
                 try {
+                    await ensureLLMModule();
                     if (loadModel) await loadModel(data.modelName);
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
@@ -157,6 +156,7 @@ const server = http.createServer((req, res) => {
 
             if (req.url === '/llm/unload') {
                 try {
+                    await ensureLLMModule();
                     if (unloadModel) await unloadModel();
                     res.writeHead(200, { 'Content-Type': 'application/json' });
                     res.end(JSON.stringify({ ok: true }));
@@ -216,7 +216,7 @@ wss.on('connection', function connection(ws) {
         broadcast(JSON.stringify(parsedData));
 
         // 2. If the LLM is loaded, feed it the context and get a reaction!
-        if (chat && parsedData.type !== 'system' && parsedData.payload) {
+        if (chat && getStatus?.().modelLoaded && parsedData.type !== 'system' && parsedData.payload) {
             try {
                 // Construct a prompt giving the AI context that it is on a stream
                 const prompt = `You are an AI co-host for a tech stream. The streamer just highlighted this content on screen:
@@ -238,8 +238,6 @@ Give a witty, short (1-2 sentences) reaction to it for the live audience. Do NOT
                 broadcast(JSON.stringify({ type: 'typing', payload: false }));
                 broadcast(JSON.stringify({ type: 'text', role: 'ai', payload: `Core overloaded.` }));
             }
-        } else if (!chat) {
-            broadcast(JSON.stringify({ type: 'text', role: 'ai', payload: `Still booting up...` }));
         }
     });
 

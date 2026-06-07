@@ -1,7 +1,11 @@
 {
   "permissions": {
     "allow": [
-      "Bash(npm run:*)"
+      "Bash(npm run:*)",
+      "Bash(npm install *)",
+      "WebSearch",
+      "Bash(git commit -m 'Add countdown element + theme-token system *)",
+      "PowerShell(npm run *)"
     ]
   }
 }

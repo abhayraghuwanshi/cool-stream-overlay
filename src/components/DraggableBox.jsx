@@ -51,33 +51,31 @@ const DraggableBox = ({
     const onDragMouseDown = (e) => {
         if (!editMode) return;
         e.preventDefault();
-        e.stopPropagation(); // prevent bubbling to root onMouseDown
+        e.stopPropagation();
 
-        // Always reset here — stopPropagation means root onMouseDown won't run,
-        // so this is the only place that resets it when the handle is clicked.
         didDrag.current = false;
         anyDragging = true;
-        setHovered(false); // clear local hover so outline resets cleanly
+        // NOTE: do NOT call setHovered here — any React state update schedules a
+        // re-render which resets el.style.left back to the % value mid-drag.
 
         const canvas = canvasRef.current;
         if (!canvas) return;
-        const { offsetWidth: W, offsetHeight: H } = canvas;
         const el = elRef.current;
-        const b  = boxRef.current;
 
+        // el.offsetLeft/Top are canvas-relative px — same space as CSS left/top px.
+        // Using these avoids any viewport→canvas coordinate conversion.
+        const startLeft   = el.offsetLeft;
+        const startTop    = el.offsetTop;
         const startMouseX = e.clientX;
         const startMouseY = e.clientY;
-        const startLeft   = (b.x / 100) * W;
-        const startTop    = (b.y / 100) * H;
 
         const onMove = (ev) => {
             const dx = ev.clientX - startMouseX;
             const dy = ev.clientY - startMouseY;
-            // Only start dragging after the mouse moves beyond the dead-zone
             if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
-            el.style.left = `${clamp(startLeft + dx, 0, W - el.offsetWidth)}px`;
-            el.style.top  = `${clamp(startTop  + dy, 0, H - el.offsetHeight)}px`;
+            el.style.left = `${startLeft + dx}px`;
+            el.style.top  = `${startTop  + dy}px`;
         };
 
         const onUp = (ev) => {
@@ -87,9 +85,11 @@ const DraggableBox = ({
             if (didDrag.current) {
                 const dx = ev.clientX - startMouseX;
                 const dy = ev.clientY - startMouseY;
-                const newLeft = clamp(startLeft + dx, 0, W - el.offsetWidth);
-                const newTop  = clamp(startTop  + dy, 0, H - el.offsetHeight);
-                onBoxChange(id, { ...boxRef.current, x: (newLeft / W) * 100, y: (newTop / H) * 100 });
+                onBoxChange(id, {
+                    ...boxRef.current,
+                    x: ((startLeft + dx) / canvas.offsetWidth)  * 100,
+                    y: ((startTop  + dy) / canvas.offsetHeight) * 100,
+                });
             }
         };
 
@@ -120,13 +120,14 @@ const DraggableBox = ({
         const minW = (MIN_W_PCT / 100) * W;
         const minH = (MIN_H_PCT / 100) * H;
 
+        let nL = left, nT = top, nW = width, nH = height;
+
         const onMove = (ev) => {
             const dx = ev.clientX - startMouseX;
             const dy = ev.clientY - startMouseY;
-            // Only start resizing after the mouse moves beyond the dead-zone
             if (!didDrag.current && Math.abs(dx) < DRAG_THRESHOLD && Math.abs(dy) < DRAG_THRESHOLD) return;
             didDrag.current = true;
-            let nL = left, nT = top, nW = width, nH = height;
+            nL = left; nT = top; nW = width; nH = height;
             if (dir.includes('e')) nW = Math.max(minW, width  + dx);
             if (dir.includes('s')) nH = Math.max(minH, height + dy);
             if (dir.includes('w')) { nW = Math.max(minW, width  - dx); nL = left + width  - nW; }
@@ -142,13 +143,11 @@ const DraggableBox = ({
             window.removeEventListener('mouseup',   onUp);
             anyDragging = false;
             if (didDrag.current) {
-                const rect  = el.getBoundingClientRect();
-                const pRect = canvas.getBoundingClientRect();
                 onBoxChange(id, {
-                    x: ((rect.left - pRect.left) / W) * 100,
-                    y: ((rect.top  - pRect.top)  / H) * 100,
-                    w: (rect.width  / W) * 100,
-                    h: (rect.height / H) * 100,
+                    x: (nL / W) * 100,
+                    y: (nT / H) * 100,
+                    w: (nW / W) * 100,
+                    h: (nH / H) * 100,
                 });
             }
         };
@@ -169,6 +168,7 @@ const DraggableBox = ({
     return (
         <div
             ref={elRef}
+            data-box-id={id}
             onMouseDown={onRootMouseDown}
             onClick={onRootClick}
             onMouseEnter={() => { if (!anyDragging) setHovered(true);  }}
@@ -188,37 +188,42 @@ const DraggableBox = ({
                 ...extraStyle,
             }}
         >
-            {/* ── Drag handle (edit mode only) ── */}
-            <div
-                onMouseDown={onDragMouseDown}
-                style={{
-                    position: 'absolute',
-                    top: 0, left: 0, right: 0,
-                    height:       editMode ? 22 : 0,
-                    overflow:     'hidden',
-                    zIndex:       31,
-                    cursor:       editMode ? 'move' : 'default',
-                    background:   'rgba(30,27,75,0.88)',
-                    borderBottom: editMode ? '1px solid rgba(99,102,241,0.3)' : 'none',
-                    display:        'flex',
-                    alignItems:     'center',
-                    justifyContent: 'space-between',
-                    padding:        '0 6px',
-                    userSelect:     'none',
-                    transition:     'height 0.15s',
-                }}
-            >
-                <span style={{ fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: '#a5b4fc' }}>
-                    {title}
-                </span>
-
-                {selected && (
-                    <span style={{ display: 'flex', gap: 2 }}>
-                        <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(id); }} title="Bring forward">▲</LayerBtn>
-                        <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(id); }} title="Send backward">▼</LayerBtn>
+            {/* ── Drag handle — overlays top of content, never shifts it ── */}
+            {editMode && (
+                <div
+                    onMouseDown={onDragMouseDown}
+                    style={{
+                        position: 'absolute',
+                        top: 0, left: 0, right: 0,
+                        height: 20,
+                        zIndex: 31,
+                        cursor: 'move',
+                        background: selected ? 'rgba(24,22,64,0.92)' : 'rgba(6,6,18,0.76)',
+                        borderBottom: '1px solid rgba(99,102,241,0.2)',
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'space-between',
+                        padding: '0 5px 0 6px',
+                        userSelect: 'none',
+                        backdropFilter: 'blur(8px)',
+                    }}
+                >
+                    <span style={{
+                        fontSize: 8, fontFamily: 'monospace',
+                        textTransform: 'uppercase', letterSpacing: 2,
+                        color: selected ? '#a5b4fc' : 'rgba(165,180,252,0.42)',
+                        lineHeight: 1,
+                    }}>
+                        {title}
                     </span>
-                )}
-            </div>
+                    {selected && (
+                        <span style={{ display: 'flex', gap: 2 }}>
+                            <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(id); }} title="Bring forward">▲</LayerBtn>
+                            <LayerBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(id); }} title="Send backward">▼</LayerBtn>
+                        </span>
+                    )}
+                </div>
+            )}
 
             {/* ── Hover label (non-edit mode) ── */}
             {!editMode && hovered && (
@@ -239,13 +244,8 @@ const DraggableBox = ({
                 </div>
             )}
 
-            {/* ── Content ── */}
-            <div style={{
-                width:     '100%',
-                height:    editMode ? 'calc(100% - 22px)' : '100%',
-                marginTop: editMode ? 22 : 0,
-                overflow:  'hidden',
-            }}>
+            {/* ── Content — always full height ── */}
+            <div style={{ width: '100%', height: '100%', overflow: 'hidden' }}>
                 {children}
             </div>
 

@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Camera, Cloud, Cpu, Download, Loader2, Rocket, Settings, Trash2, X } from 'lucide-react';
+import { Cloud, Cpu, Download, Loader2, Rocket, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
 
@@ -23,9 +23,6 @@ async function sidecarPost(path, data = {}) {
 
 const SettingsModal = ({
     onClose,
-    showFaceCam, setShowFaceCam,
-    showHandCam, setShowHandCam,
-    showRoomCam, setShowRoomCam,
     socialGithub, setSocialGithub,
     socialTwitter, setSocialTwitter,
     socialLinkedin, setSocialLinkedin,
@@ -67,8 +64,8 @@ const SettingsModal = ({
                     {/* Sidebar */}
                     <div className="w-64 border-r border-white/10 flex flex-col p-4 gap-2 bg-black/20">
                         <TabButton
-                            icon={Camera}
-                            label="Layout & Cameras"
+                            icon={Settings}
+                            label="General"
                             active={activeTab === 'layout'}
                             onClick={() => setActiveTab('layout')}
                         />
@@ -84,9 +81,6 @@ const SettingsModal = ({
                     <div className="flex-1 overflow-y-auto p-6 bg-black/40 custom-scrollbar">
                         {activeTab === 'layout' && (
                             <LayoutTab
-                                showFaceCam={showFaceCam} setShowFaceCam={setShowFaceCam}
-                                showHandCam={showHandCam} setShowHandCam={setShowHandCam}
-                                showRoomCam={showRoomCam} setShowRoomCam={setShowRoomCam}
                                 socialGithub={socialGithub} setSocialGithub={setSocialGithub}
                                 socialTwitter={socialTwitter} setSocialTwitter={setSocialTwitter}
                                 socialLinkedin={socialLinkedin} setSocialLinkedin={setSocialLinkedin}
@@ -128,7 +122,7 @@ const ToggleItem = ({ label, description, active, onClick }) => (
     </div>
 );
 
-const LayoutTab = ({ showFaceCam, setShowFaceCam, showHandCam, setShowHandCam, showRoomCam, setShowRoomCam, socialGithub, setSocialGithub, socialTwitter, setSocialTwitter, socialLinkedin, setSocialLinkedin, useGPU, setUseGPU }) => {
+const LayoutTab = ({ socialGithub, setSocialGithub, socialTwitter, setSocialTwitter, socialLinkedin, setSocialLinkedin, useGPU, setUseGPU }) => {
     const [localGithub, setLocalGithub] = useState(socialGithub || '');
     const [localTwitter, setLocalTwitter] = useState(socialTwitter || '');
     const [localLinkedin, setLocalLinkedin] = useState(socialLinkedin || '');
@@ -148,32 +142,6 @@ const LayoutTab = ({ showFaceCam, setShowFaceCam, showHandCam, setShowHandCam, s
     return (
         <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
             <div>
-                <h3 className="text-lg font-semibold text-white mb-1">Camera Visibility</h3>
-                <p className="text-sm text-white/50 mb-4">Toggle cameras on your overlay on or off.</p>
-
-                <div className="flex flex-col gap-3">
-                    <ToggleItem
-                        label="Face Camera"
-                        description="Shows the primary face camera widget on the top right."
-                        active={showFaceCam}
-                        onClick={() => setShowFaceCam(!showFaceCam)}
-                    />
-                    <ToggleItem
-                        label="Hand Camera"
-                        description="Secondary camera focusing on hands/keyboard."
-                        active={showHandCam}
-                        onClick={() => setShowHandCam(!showHandCam)}
-                    />
-                    <ToggleItem
-                        label="Room Camera"
-                        description="Wide angle camera showing the entire room."
-                        active={showRoomCam}
-                        onClick={() => setShowRoomCam(!showRoomCam)}
-                    />
-                </div>
-            </div>
-
-            <div className="pt-2">
                 <h3 className="text-lg font-semibold text-white mb-1">Social URLs</h3>
                 <p className="text-sm text-white/50 mb-4">Set the text for the social feed ticker.</p>
 

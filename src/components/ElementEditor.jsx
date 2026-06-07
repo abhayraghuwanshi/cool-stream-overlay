@@ -1,3 +1,4 @@
+import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 import { hexToRgba } from './ElementRenderer';
 
@@ -136,13 +137,13 @@ const SelectInput = ({ value, onChange, options }) => (
 );
 
 const Divider = () => (
-    <div style={{ width: 1, height: 32, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
+    <div style={{ width: '100%', height: 1, background: 'rgba(255,255,255,0.08)', flexShrink: 0 }} />
 );
 
 const Group = ({ label, children }) => (
-    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0 }}>
+    <div style={{ display: 'flex', flexDirection: 'column', gap: 4, flexShrink: 0, width: '100%' }}>
         {label && <Label>{label}</Label>}
-        <div style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 5, flexWrap: 'wrap' }}>
             {children}
         </div>
     </div>
@@ -156,7 +157,8 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
 
     const set = (key, val) => onChange({ [key]: val });
     const { type } = element;
-    const isText = ['text', 'lowerthird', 'clock'].includes(type);
+    const isText = ['text', 'lowerthird', 'clock', 'countdown'].includes(type);
+    const isAutoText = type === 'clock' || type === 'countdown'; // auto-generated content, no free text input
 
     const handleLogoUpload = (e) => {
         const file = e.target.files?.[0];
@@ -169,21 +171,15 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
     return (
         <div
             style={{
-                position: 'absolute',
-                bottom: 8, left: '50%',
-                transform: 'translateX(-50%)',
+                width: '100%',
+                boxSizing: 'border-box',
                 background: 'rgba(7,7,16,0.94)',
-                backdropFilter: 'blur(16px)',
-                border: '1px solid rgba(255,255,255,0.08)',
-                borderRadius: 12,
-                zIndex: 300,
-                padding: '10px 14px',
+                padding: '12px 14px 16px',
                 display: 'flex',
-                alignItems: 'flex-end',
+                flexDirection: 'column',
+                alignItems: 'stretch',
                 gap: 12,
-                boxShadow: '0 -4px 32px rgba(0,0,0,0.5)',
-                maxWidth: 'calc(100vw - 32px)',
-                overflowX: 'auto',
+                overflowX: 'hidden',
             }}
         >
             {/* ── Type badge ── */}
@@ -203,7 +199,7 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
             <Divider />
 
             {/* ── Text content ── */}
-            {isText && type !== 'clock' && (
+            {isText && !isAutoText && (
                 <Group label="Content">
                     <TextInput
                         value={element.content}
@@ -211,6 +207,24 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                         placeholder="Enter text..."
                         style={{ width: 160 }}
                     />
+                </Group>
+            )}
+
+            {/* ── Countdown duration ── */}
+            {type === 'countdown' && (
+                <Group label="Duration">
+                    <NumberInput
+                        value={Math.floor((element.durationSec ?? 0) / 60)}
+                        onChange={v => set('durationSec', Math.max(0, v) * 60 + (element.durationSec ?? 0) % 60)}
+                        min={0} max={180} style={{ width: 52 }}
+                    />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>min</span>
+                    <NumberInput
+                        value={(element.durationSec ?? 0) % 60}
+                        onChange={v => set('durationSec', Math.floor((element.durationSec ?? 0) / 60) * 60 + Math.min(59, Math.max(0, v)))}
+                        min={0} max={59} style={{ width: 52 }}
+                    />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec</span>
                 </Group>
             )}
 
@@ -279,15 +293,15 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                                 fontFamily: 'inter, system-ui',
                             }}
                         >
-                            {element.src ? '↺ Replace' : '⬆ Upload'}
+                            {element.src ? <><RefreshCw size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Replace</> : <><Upload size={11} style={{ display: 'inline', verticalAlign: 'middle', marginRight: 4 }} />Upload</>}
                         </button>
                         <input ref={fileRef} type="file" accept="image/*" onChange={handleLogoUpload} style={{ display: 'none' }} />
                         {element.src && (
                             <button
                                 onClick={() => onChange({ src: null })}
-                                style={{ background: 'none', border: '1px solid rgba(255,100,100,0.3)', borderRadius: 5, color: 'rgba(255,100,100,0.7)', fontSize: 11, padding: '4px 8px', cursor: 'pointer' }}
+                                style={{ background: 'none', border: '1px solid rgba(255,100,100,0.3)', borderRadius: 5, color: 'rgba(255,100,100,0.7)', fontSize: 11, padding: '4px 8px', cursor: 'pointer', display: 'flex', alignItems: 'center' }}
                             >
-                                ✕
+                                <X size={12} />
                             </button>
                         )}
                     </Group>
@@ -318,8 +332,26 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                 </>
             )}
 
+            {/* ── Cam frame controls ── */}
+            {type === 'frame' && (
+                <>
+                    <Group label="Frame style">
+                        {['solid', 'glow', 'gradient', 'none'].map(s => (
+                            <ToggleBtn key={s} active={(element.frameStyle ?? 'solid') === s} onClick={() => set('frameStyle', s)} title={s}>{s}</ToggleBtn>
+                        ))}
+                    </Group>
+                    <Group label="Border width">
+                        <NumberInput value={element.borderWidth} onChange={v => set('borderWidth', v)} min={1} max={24} style={{ width: 52 }} />
+                    </Group>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Frame colour follows the theme accent. Change it in the Theme panel.
+                    </div>
+                    <Divider />
+                </>
+            )}
+
             {/* ── Background ── */}
-            {type !== 'divider' && (
+            {type !== 'divider' && type !== 'frame' && (
                 <>
                     <ColorInput value={element.bgColor} onChange={v => set('bgColor', v)} label="BG Color" />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>

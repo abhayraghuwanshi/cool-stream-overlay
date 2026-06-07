@@ -1,5 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
+import { Bot, Camera, ChevronDown, ChevronUp, ListChecks, Monitor, Plus, Rss, Video, X } from 'lucide-react';
 import { useState } from 'react';
+import { SCENE_PRESETS } from '../scenes/presets';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -22,15 +24,13 @@ const TrashIcon = () => (
 
 // ── Data ──────────────────────────────────────────────────────────────────────
 
-const SCREEN_COLORS = ['#6366f1', '#8b5cf6', '#a78bfa', '#c4b5fd'];
-
 const BUILTIN_LAYERS = [
-    { id: 'faceCam',       label: 'Face Cam',     color: '#8b5cf6', icon: '📷' },
-    { id: 'handCam',       label: 'Hand Cam',     color: '#a78bfa', icon: '✋' },
-    { id: 'roomCam',       label: 'Room Cam',     color: '#c4b5fd', icon: '🏠' },
-    { id: 'socialFeed',    label: 'Social Feed',  color: '#0ea5e9', icon: '📡' },
-    { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', icon: '🤖' },
-    { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', icon: '✅' },
+    { id: 'faceCam',       label: 'Face Cam',     color: '#8b5cf6', Icon: Camera },
+    { id: 'handCam',       label: 'Hand Cam',     color: '#a78bfa', Icon: Video },
+    { id: 'roomCam',       label: 'Room Cam',     color: '#c4b5fd', Icon: Monitor },
+    { id: 'socialFeed',    label: 'Social Feed',  color: '#0ea5e9', Icon: Rss },
+    { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', Icon: Bot },
+    { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', Icon: ListChecks },
 ];
 
 const ELEMENT_TYPES = [
@@ -50,6 +50,8 @@ const ELEMENT_TYPES = [
         </span>
     )},
     { type: 'clock',      label: 'Clock',      color: '#84cc16', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#84cc16', letterSpacing: -0.5 }}>00:00</span> },
+    { type: 'countdown',  label: 'Countdown',  color: '#14b8a6', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#14b8a6', letterSpacing: -0.5 }}>05:00</span> },
+    { type: 'frame',      label: 'Cam Frame',  color: '#818cf8', preview: <span style={{ width: 20, height: 14, border: '2px solid #818cf8', borderRadius: 3, display: 'block', boxShadow: '0 0 4px #818cf8' }} /> },
 ];
 
 const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]));
@@ -66,7 +68,21 @@ const Divider = () => (
     <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '6px 0' }} />
 );
 
-const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, onDelete }) => (
+const ZBtn = ({ onClick, title, children }) => (
+    <button
+        onClick={onClick}
+        title={title}
+        style={{
+            background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)',
+            borderRadius: 3, color: 'rgba(165,180,252,0.8)',
+            fontSize: 8, lineHeight: 1, padding: '1px 3px', cursor: 'pointer', flexShrink: 0,
+        }}
+    >
+        {children}
+    </button>
+);
+
+const LayerRow = ({ icon, label, color, visible, selected, live, onToggle, onSelect, onDelete, onLayerUp, onLayerDown }) => (
     <div
         onClick={onSelect}
         style={{
@@ -94,11 +110,17 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
             {visible ? <EyeOn /> : <EyeOff />}
         </button>
 
-        {/* Color indicator */}
-        <span style={{
-            fontSize: 12, flexShrink: 0, lineHeight: 1,
-            filter: visible ? 'none' : 'grayscale(1)',
-        }}>
+        {/* Live status dot (cameras only) */}
+        {live !== undefined && (
+            <span title={live ? 'Live' : 'No device'} style={{
+                width: 5, height: 5, borderRadius: '50%', flexShrink: 0,
+                background: live ? '#22c55e' : 'rgba(255,255,255,0.18)',
+                boxShadow: live ? '0 0 5px rgba(34,197,94,0.6)' : 'none',
+            }} />
+        )}
+
+        {/* Icon */}
+        <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1, filter: visible ? 'none' : 'grayscale(1)' }}>
             {icon}
         </span>
 
@@ -111,7 +133,15 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
             {label}
         </span>
 
-        {/* Delete button (elements only) */}
+        {/* Z-order buttons (visible when selected) */}
+        {selected && (onLayerUp || onLayerDown) && (
+            <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(); }} title="Move up (on top)"><ChevronUp size={9} /></ZBtn>
+                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(); }} title="Move down (behind)"><ChevronDown size={9} /></ZBtn>
+            </span>
+        )}
+
+        {/* Delete (elements only) */}
         {onDelete && (
             <button
                 title="Delete"
@@ -119,8 +149,7 @@ const LayerRow = ({ icon, label, color, visible, selected, onToggle, onSelect, o
                 style={{
                     background: 'none', border: 'none', padding: '2px 3px', cursor: 'pointer',
                     color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center',
-                    borderRadius: 4, flexShrink: 0,
-                    transition: 'color 0.1s',
+                    borderRadius: 4, flexShrink: 0, transition: 'color 0.1s',
                 }}
                 onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
                 onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.2)'}
@@ -163,30 +192,138 @@ const ElementTypeCard = ({ type, label, color, preview, onClick }) => (
     </button>
 );
 
+// ── Scenes ──────────────────────────────────────────────────────────────────
+
+const SceneChip = ({ label, accent = '#6366f1', onClick, onDelete }) => (
+    <div style={{ position: 'relative', display: 'inline-flex' }}>
+        <button
+            onClick={onClick}
+            title={`Apply "${label}"`}
+            style={{
+                display: 'flex', alignItems: 'center', gap: 5,
+                padding: onDelete ? '4px 18px 4px 8px' : '4px 8px',
+                borderRadius: 7,
+                background: `${accent}14`,
+                border: `1px solid ${accent}40`,
+                color: 'rgba(255,255,255,0.78)',
+                fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5,
+                cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
+            }}
+            onMouseEnter={e => { e.currentTarget.style.background = `${accent}28`; }}
+            onMouseLeave={e => { e.currentTarget.style.background = `${accent}14`; }}
+        >
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, flexShrink: 0, boxShadow: `0 0 5px ${accent}aa` }} />
+            {label}
+        </button>
+        {onDelete && (
+            <button
+                title="Delete scene"
+                onClick={(e) => { e.stopPropagation(); onDelete(); }}
+                style={{
+                    position: 'absolute', right: 3, top: '50%', transform: 'translateY(-50%)',
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
+                    color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center',
+                }}
+                onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
+                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
+            >
+                <X size={10} />
+            </button>
+        )}
+    </div>
+);
+
+const ScenesSection = ({ scenes, onApply, onSave, onDelete }) => {
+    const [adding, setAdding] = useState(false);
+    const [name, setName] = useState('');
+
+    const commit = () => { onSave?.(name); setName(''); setAdding(false); };
+    const cancel = () => { setName(''); setAdding(false); };
+
+    return (
+        <>
+            <SectionLabel>Scenes</SectionLabel>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '2px 2px 6px' }}>
+                {SCENE_PRESETS.map(p => (
+                    <SceneChip key={p.id} label={p.name} accent={p.accent} onClick={() => onApply?.(p.snapshot)} />
+                ))}
+                {scenes.map(s => (
+                    <SceneChip key={s.id} label={s.name} accent="#64748b" onClick={() => onApply?.(s.snapshot)} onDelete={() => onDelete?.(s.id)} />
+                ))}
+            </div>
+            {adding ? (
+                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                    <input
+                        autoFocus
+                        value={name}
+                        onChange={e => setName(e.target.value)}
+                        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+                        placeholder="Scene name…"
+                        style={{
+                            flex: 1, minWidth: 0, background: '#1a1a2e', border: '1px solid rgba(99,102,241,0.35)',
+                            borderRadius: 6, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '4px 6px', outline: 'none',
+                        }}
+                    />
+                    <button onClick={commit} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(79,70,229,0.5)', border: '1px solid rgba(99,102,241,0.5)', color: '#fff', cursor: 'pointer', flexShrink: 0 }}>Save</button>
+                    <button onClick={cancel} style={{ padding: '4px 6px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', flexShrink: 0 }}><X size={11} /></button>
+                </div>
+            ) : (
+                <button
+                    onClick={() => setAdding(true)}
+                    style={{
+                        width: '100%', padding: '5px 8px', borderRadius: 7, marginBottom: 4,
+                        fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                        background: 'rgba(99,102,241,0.1)', border: '1px dashed rgba(99,102,241,0.35)',
+                        color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left',
+                        display: 'flex', alignItems: 'center', gap: 5,
+                    }}
+                >
+                    <Plus size={11} /> Save current layout
+                </button>
+            )}
+        </>
+    );
+};
+
 // ── Main panel ────────────────────────────────────────────────────────────────
+
+const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
 
 const LayersPanel = ({
     // Built-in box visibility
     boxVisibility,
-    onToggleBuiltin,  // (id) => void
+    onToggleBuiltin,
     // Elements
     elements,
     selectedElementId,
     selectedBox,
-    onToggleElement,  // (id) => void
-    onDeleteElement,  // (id) => void
-    onSelectElement,  // (id) => void
-    onSelectBox,      // (id) => void
+    onToggleElement,
+    onDeleteElement,
+    onSelectElement,
+    onSelectBox,
     // Add element
-    onAddElement,     // (type) => void
-    // Multi-screen captures
-    screens,          // [{ slot, stream, label }]
-    onAddScreen,
-    onRemoveScreen,   // (slot) => void
-    // Background / Reset
+    onAddElement,
+    // Scenes
+    scenes = [],
+    onApplyScene,
+    onSaveScene,
+    onDeleteScene,
+    // Background / Theme / Reset
     onOpenBackground,
+    onOpenTheme,
     onResetLayout,
+    // Camera live status (device assignment lives in the right panel now)
+    streams = {},
+    // Z-order
+    zOrder = [],
+    onLayerUp,
+    onLayerDown,
 }) => {
+    // Higher index in zOrder = higher z = rendered on top = shown first in list
+    const zRank = (id) => {
+        const i = zOrder.indexOf(id);
+        return i === -1 ? -1 : i;
+    };
     const [showAddPanel, setShowAddPanel] = useState(false);
 
     return (
@@ -227,98 +364,66 @@ const LayersPanel = ({
             {/* ── Scrollable body ── */}
             <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
 
-                {/* ── Displays ── */}
-                <SectionLabel>Displays</SectionLabel>
-                {screens.map(sc => {
-                    const boxId = `screen_${sc.slot}`;
-                    const color = SCREEN_COLORS[sc.slot] ?? '#6366f1';
-                    const visible = boxVisibility[boxId] ?? true;
+                {/* ── Scenes ── */}
+                <ScenesSection scenes={scenes} onApply={onApplyScene} onSave={onSaveScene} onDelete={onDeleteScene} />
+                <Divider />
+
+                {/* ── Unified Layers list ── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 8px 4px' }}>
+                    <button
+                        onClick={() => setShowAddPanel(v => !v)}
+                        title="Add element"
+                        style={{
+                            display: 'flex', alignItems: 'center', gap: 3,
+                            background: showAddPanel ? 'rgba(99,102,241,0.22)' : 'transparent',
+                            border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc',
+                            borderRadius: 6, fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                            padding: '3px 7px', cursor: 'pointer',
+                        }}
+                    >
+                        <Plus size={10} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }} /> Add
+                    </button>
+                </div>
+
+                {/* Built-in boxes (cameras + panels), sorted front → back */}
+                {[...BUILTIN_LAYERS]
+                    .sort((a, b) => zRank(b.id) - zRank(a.id))
+                    .map(layer => {
+                        const isCam = CAMERA_IDS.includes(layer.id);
+                        return (
+                            <LayerRow
+                                key={layer.id}
+                                icon={<layer.Icon size={13} color={layer.color} />}
+                                label={layer.label}
+                                color={layer.color}
+                                visible={boxVisibility[layer.id] ?? true}
+                                selected={selectedBox === layer.id}
+                                live={isCam ? !!streams[layer.id] : undefined}
+                                onSelect={() => onSelectBox(layer.id)}
+                                onToggle={() => onToggleBuiltin(layer.id)}
+                                onLayerUp={() => onLayerUp?.(layer.id)}
+                                onLayerDown={() => onLayerDown?.(layer.id)}
+                            />
+                        );
+                    })}
+
+                {/* Custom elements (rendered above boxes on the canvas) */}
+                {elements.map((el) => {
+                    const typeInfo = ELEMENT_TYPE_MAP[el.type];
                     return (
                         <LayerRow
-                            key={sc.slot}
-                            icon={<span style={{ width: 8, height: 8, borderRadius: '50%', background: color, display: 'inline-block', flexShrink: 0 }} />}
-                            label={sc.label}
-                            color={color}
-                            visible={visible}
-                            selected={selectedBox === boxId}
-                            onSelect={() => onSelectBox(boxId)}
-                            onToggle={() => onToggleBuiltin(boxId)}
-                            onDelete={() => onRemoveScreen(sc.slot)}
+                            key={el.id}
+                            icon={typeInfo?.preview ?? el.type.charAt(0).toUpperCase()}
+                            label={el.content || typeInfo?.label || el.type}
+                            color={typeInfo?.color ?? '#6b7280'}
+                            visible={!el.hidden}
+                            selected={selectedElementId === el.id}
+                            onSelect={() => onSelectElement(el.id)}
+                            onToggle={() => onToggleElement(el.id)}
+                            onDelete={() => onDeleteElement(el.id)}
                         />
                     );
                 })}
-                <button
-                    onClick={onAddScreen}
-                    disabled={screens.length >= 4}
-                    style={{
-                        width: '100%', padding: '5px 8px', borderRadius: 7, marginBottom: 4,
-                        fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
-                        background: screens.length < 4 ? 'rgba(99,102,241,0.1)' : 'rgba(255,255,255,0.02)',
-                        border: `1px dashed ${screens.length < 4 ? 'rgba(99,102,241,0.35)' : 'rgba(255,255,255,0.08)'}`,
-                        color: screens.length < 4 ? '#a5b4fc' : 'rgba(255,255,255,0.18)',
-                        cursor: screens.length < 4 ? 'pointer' : 'not-allowed',
-                        transition: 'all 0.12s', textAlign: 'left',
-                    }}
-                >
-                    {screens.length >= 4 ? 'Max 4 displays' : '+ Add Display'}
-                </button>
-
-                {/* ── Built-in layers ── */}
-                <Divider />
-                <SectionLabel>Canvas</SectionLabel>
-                {BUILTIN_LAYERS.map(layer => (
-                    <LayerRow
-                        key={layer.id}
-                        icon={layer.icon}
-                        label={layer.label}
-                        color={layer.color}
-                        visible={boxVisibility[layer.id] ?? true}
-                        selected={selectedBox === layer.id}
-                        onSelect={() => onSelectBox(layer.id)}
-                        onToggle={() => onToggleBuiltin(layer.id)}
-                    />
-                ))}
-
-                {/* ── Custom elements ── */}
-                {elements.length > 0 && (
-                    <>
-                        <Divider />
-                        <SectionLabel>Elements</SectionLabel>
-                        {elements.map((el) => {
-                            const typeInfo = ELEMENT_TYPE_MAP[el.type];
-                            return (
-                                <LayerRow
-                                    key={el.id}
-                                    icon={typeInfo?.preview ?? el.type.charAt(0).toUpperCase()}
-                                    label={el.content || typeInfo?.label || el.type}
-                                    color={typeInfo?.color ?? '#6b7280'}
-                                    visible={!el.hidden}
-                                    selected={selectedElementId === el.id}
-                                    onSelect={() => onSelectElement(el.id)}
-                                    onToggle={() => onToggleElement(el.id)}
-                                    onDelete={() => onDeleteElement(el.id)}
-                                />
-                            );
-                        })}
-                    </>
-                )}
-
-                {/* ── Add element ── */}
-                <Divider />
-                <button
-                    onClick={() => setShowAddPanel(v => !v)}
-                    style={{
-                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                        padding: '6px 8px', borderRadius: 7, border: 'none', cursor: 'pointer',
-                        background: showAddPanel ? 'rgba(99,102,241,0.15)' : 'transparent',
-                        color: showAddPanel ? '#a5b4fc' : 'rgba(255,255,255,0.5)',
-                        fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1.5,
-                        transition: 'all 0.12s',
-                    }}
-                >
-                    <span>+ Add Element</span>
-                    <span style={{ fontSize: 14, lineHeight: 1, transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }}>+</span>
-                </button>
 
                 <AnimatePresence>
                     {showAddPanel && (
@@ -358,6 +463,17 @@ const LayersPanel = ({
                 display: 'flex', gap: 5, flexShrink: 0,
             }}>
                 <button
+                    onClick={onOpenTheme}
+                    style={{
+                        flex: 1, padding: '5px 0', borderRadius: 7,
+                        background: 'rgba(99,102,241,0.14)', border: '1px solid rgba(99,102,241,0.3)',
+                        color: '#a5b4fc', fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                        cursor: 'pointer', transition: 'all 0.12s',
+                    }}
+                >
+                    Theme
+                </button>
+                <button
                     onClick={onOpenBackground}
                     style={{
                         flex: 1, padding: '5px 0', borderRadius: 7,
@@ -366,7 +482,7 @@ const LayersPanel = ({
                         cursor: 'pointer', transition: 'all 0.12s',
                     }}
                 >
-                    Background
+                    BG
                 </button>
                 <button
                     onClick={onResetLayout}
