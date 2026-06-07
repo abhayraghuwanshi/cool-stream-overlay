@@ -8,10 +8,19 @@ import { Redis } from '@upstash/redis';
 // marketplace naming are accepted):
 //   UPSTASH_REDIS_REST_URL / KV_REST_API_URL
 //   UPSTASH_REDIS_REST_TOKEN / KV_REST_API_TOKEN
-const redis = new Redis({
-    url: process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL,
-    token: process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN,
-});
+const REDIS_URL = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+const REDIS_TOKEN = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
+
+// Create the client lazily so a missing env var doesn't spam warnings at import
+// time and we can return one clear error instead.
+let _redis;
+function getRedis() {
+    if (!REDIS_URL || !REDIS_TOKEN) {
+        throw new Error('KV not configured: set KV_REST_API_URL/KV_REST_API_TOKEN (or UPSTASH_REDIS_REST_URL/TOKEN) for this environment.');
+    }
+    if (!_redis) _redis = new Redis({ url: REDIS_URL, token: REDIS_TOKEN });
+    return _redis;
+}
 
 const keyFor = (room) =>
     `layout:${String(room || 'default').slice(0, 64).replace(/[^\w.-]/g, '_')}`;
@@ -31,6 +40,8 @@ export default async function handler(req, res) {
     const key = keyFor(req.query.room);
 
     try {
+        const redis = getRedis();
+
         if (req.method === 'GET') {
             const data = await redis.get(key); // @upstash/redis returns parsed JSON
             res.status(200).json(data || {});

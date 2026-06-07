@@ -1,6 +1,32 @@
 import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 
+// Load an image file, downscale it so its longest side is <= maxDim, and return
+// a compressed JPEG data URL. Keeps the synced layout small enough to persist
+// to the KV store (raw photos are several MB and fail to save).
+const scaleImageToDataURL = (file, maxDim = 1920, quality = 0.82) =>
+    new Promise((resolve, reject) => {
+        const reader = new FileReader();
+        reader.onerror = () => reject(reader.error);
+        reader.onload = () => {
+            const img = new Image();
+            img.onerror = () => reject(new Error('Could not decode image'));
+            img.onload = () => {
+                const scale = Math.min(1, maxDim / Math.max(img.width, img.height));
+                const w = Math.max(1, Math.round(img.width * scale));
+                const h = Math.max(1, Math.round(img.height * scale));
+                const canvas = document.createElement('canvas');
+                canvas.width = w;
+                canvas.height = h;
+                const ctx = canvas.getContext('2d');
+                ctx.drawImage(img, 0, 0, w, h);
+                resolve(canvas.toDataURL('image/jpeg', quality));
+            };
+            img.src = reader.result;
+        };
+        reader.readAsDataURL(file);
+    });
+
 // ── Presets ────────────────────────────────────────────────────────────────
 export const PRESETS = [
     { label: 'Transparent',   type: 'transparent' },
@@ -107,12 +133,22 @@ const BackgroundPanel = ({ bg, onChange, onClose }) => {
         return false;
     };
 
-    const handleImageUpload = (e) => {
+    const handleImageUpload = async (e) => {
         const file = e.target.files?.[0];
         if (!file) return;
-        const reader = new FileReader();
-        reader.onload = (ev) => set({ type: 'image', src: ev.target.result, size: 'cover', overlay: false, overlayOpacity: 0.3 });
-        reader.readAsDataURL(file);
+        try {
+            // Downscale + re-encode before storing. The image lives as a base64
+            // string inside the synced layout, which is SET into Upstash on every
+            // save — a raw multi-MB photo exceeds request limits and the save
+            // fails silently. ~1920px JPEG keeps it well under that.
+            const src = await scaleImageToDataURL(file, 1920, 0.82);
+            set({ type: 'image', src, size: 'cover', overlay: false, overlayOpacity: 0.3 });
+        } catch (err) {
+            console.error('[BackgroundPanel] image upload failed', err);
+        } finally {
+            // Reset so re-selecting the same file still fires onChange.
+            e.target.value = '';
+        }
     };
 
     const controlStyle = {

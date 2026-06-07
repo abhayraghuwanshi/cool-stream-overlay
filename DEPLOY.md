@@ -42,12 +42,16 @@ that slot. No `?room=` ⇒ the shared `default` slot.
 
 ## Local development
 
-Plain `vite` does **not** serve `/api`. Two options:
+Plain `vite` does **not** run the Vercel `/api` functions, so without help every
+save would 404 and state would be lost on reload. Pick one:
 
-- Run `vercel dev` — serves the Vite app and the `api/` functions together
-  (needs the env vars above, e.g. via `vercel env pull`).
-- Or keep using `vite` and point at your deployed API by creating `.env.local`:
-
-  ```
-  VITE_LAYOUT_API=https://<your-app>.vercel.app/api
-  ```
+- **`npm run dev` (default, offline)** — `vite.config.js` includes a dev-only
+  middleware that emulates `/api/layout`, persisting to a local `.dev-layouts.json`
+  (per `room`, gitignored). No Upstash/Vercel needed. State survives reloads.
+  Use a consistent `?room=` across reloads (no param ⇒ the `default` room).
+  This local store is separate from production KV.
+- **`vercel dev`** — runs the real `api/` functions against the real KV
+  (production-accurate; needs the env vars above via `vercel env pull`).
+- **`vite` against the deployed API** — create `.env.local` with
+  `VITE_LAYOUT_API=https://<your-app>.vercel.app/api` to read/write cloud KV
+  from a local frontend.

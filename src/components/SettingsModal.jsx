@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Cloud, Cpu, Download, Loader2, Rocket, Settings, Trash2, X } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
+import { BACKEND_HTTP, BACKEND_WS, hasLocalSidecar } from '../config.js';
 
 const SIDECAR_URL = BACKEND_HTTP;
 
@@ -219,6 +219,11 @@ function LocalAITab() {
         let mounted = true;
 
         async function checkSidecar() {
+            // The local LLM sidecar only exists when running on your own machine.
+            if (!hasLocalSidecar()) {
+                if (mounted) setSidecarAvailable(false);
+                return;
+            }
             try {
                 const health = await fetch(`${SIDECAR_URL}/health`, { method: 'GET' });
                 if (health.ok && mounted) {

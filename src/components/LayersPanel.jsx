@@ -1,7 +1,6 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bot, Camera, ChevronDown, ChevronUp, ListChecks, Monitor, Plus, Rss, Video, X } from 'lucide-react';
+import { Bot, Camera, ChevronDown, ChevronUp, Layers, ListChecks, Monitor, Plus, RotateCw, Rss, Video, X } from 'lucide-react';
 import { useState } from 'react';
-import { SCENE_PRESETS } from '../scenes/presets';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
 
@@ -32,6 +31,7 @@ const BUILTIN_LAYERS = [
     { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', Icon: Bot },
     { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', Icon: ListChecks },
 ];
+const BUILTIN_MAP = Object.fromEntries(BUILTIN_LAYERS.map(l => [l.id, l]));
 
 const ELEMENT_TYPES = [
     { type: 'text',       label: 'Text',       color: '#ec4899', preview: <span style={{ fontWeight: 900, fontSize: 18, fontFamily: 'serif', lineHeight: 1 }}>T</span> },
@@ -56,6 +56,8 @@ const ELEMENT_TYPES = [
 
 const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]));
 
+const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
+
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const SectionLabel = ({ children }) => (
@@ -68,47 +70,53 @@ const Divider = () => (
     <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '6px 0' }} />
 );
 
-const ZBtn = ({ onClick, title, children }) => (
+const IconBtn = ({ onClick, title, danger, children }) => (
     <button
         onClick={onClick}
         title={title}
         style={{
-            background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.25)',
-            borderRadius: 3, color: 'rgba(165,180,252,0.8)',
-            fontSize: 8, lineHeight: 1, padding: '1px 3px', cursor: 'pointer', flexShrink: 0,
+            background: 'none', border: 'none', padding: '2px 2px', cursor: 'pointer', flexShrink: 0,
+            color: 'rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', borderRadius: 4,
+            transition: 'color 0.1s',
         }}
+        onMouseEnter={e => e.currentTarget.style.color = danger ? '#f87171' : 'rgba(255,255,255,0.7)'}
+        onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.28)'}
     >
         {children}
     </button>
 );
 
-const LayerRow = ({ icon, label, color, visible, selected, live, onToggle, onSelect, onDelete, onLayerUp, onLayerDown }) => (
+// One row in the unified layers list. Every layer gets reorder (↑↓) + remove;
+// elements additionally get an eye (hide/show without removing).
+const LayerRow = ({ icon, label, color, visible, selected, live, onSelect, onToggle, onUp, onDown, onRemove }) => (
     <div
         onClick={onSelect}
         style={{
-            display: 'flex', alignItems: 'center', gap: 6,
-            padding: '5px 8px',
+            display: 'flex', alignItems: 'center', gap: 5,
+            padding: '5px 6px',
             borderRadius: 7,
             cursor: 'pointer',
             background: selected ? 'rgba(99,102,241,0.18)' : 'transparent',
             border: selected ? '1px solid rgba(99,102,241,0.3)' : '1px solid transparent',
             opacity: visible ? 1 : 0.45,
-            transition: 'all 0.1s',
+            transition: 'background 0.1s',
             userSelect: 'none',
         }}
     >
-        {/* Eye toggle */}
-        <button
-            title={visible ? 'Hide' : 'Show'}
-            onClick={(e) => { e.stopPropagation(); onToggle(); }}
-            style={{
-                background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
-                color: visible ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)',
-                display: 'flex', alignItems: 'center',
-            }}
-        >
-            {visible ? <EyeOn /> : <EyeOff />}
-        </button>
+        {/* Eye toggle (elements only) */}
+        {onToggle && (
+            <button
+                title={visible ? 'Hide' : 'Show'}
+                onClick={(e) => { e.stopPropagation(); onToggle(); }}
+                style={{
+                    background: 'none', border: 'none', padding: 0, cursor: 'pointer', flexShrink: 0,
+                    color: visible ? 'rgba(255,255,255,0.5)' : 'rgba(255,255,255,0.2)',
+                    display: 'flex', alignItems: 'center',
+                }}
+            >
+                {visible ? <EyeOn /> : <EyeOff />}
+            </button>
+        )}
 
         {/* Live status dot (cameras only) */}
         {live !== undefined && (
@@ -120,7 +128,7 @@ const LayerRow = ({ icon, label, color, visible, selected, live, onToggle, onSel
         )}
 
         {/* Icon */}
-        <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1, filter: visible ? 'none' : 'grayscale(1)' }}>
+        <span style={{ fontSize: 12, flexShrink: 0, lineHeight: 1, display: 'flex', alignItems: 'center', filter: visible ? 'none' : 'grayscale(1)' }}>
             {icon}
         </span>
 
@@ -133,36 +141,18 @@ const LayerRow = ({ icon, label, color, visible, selected, live, onToggle, onSel
             {label}
         </span>
 
-        {/* Z-order buttons (visible when selected) */}
-        {selected && (onLayerUp || onLayerDown) && (
-            <span style={{ display: 'flex', gap: 2, flexShrink: 0 }}>
-                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerUp?.(); }} title="Move up (on top)"><ChevronUp size={9} /></ZBtn>
-                <ZBtn onClick={(e) => { e.stopPropagation(); onLayerDown?.(); }} title="Move down (behind)"><ChevronDown size={9} /></ZBtn>
-            </span>
-        )}
+        {/* Reorder — always visible */}
+        <IconBtn onClick={(e) => { e.stopPropagation(); onUp?.(); }} title="Move up (front)"><ChevronUp size={12} /></IconBtn>
+        <IconBtn onClick={(e) => { e.stopPropagation(); onDown?.(); }} title="Move down (back)"><ChevronDown size={12} /></IconBtn>
 
-        {/* Delete (elements only) */}
-        {onDelete && (
-            <button
-                title="Delete"
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                style={{
-                    background: 'none', border: 'none', padding: '2px 3px', cursor: 'pointer',
-                    color: 'rgba(255,255,255,0.2)', display: 'flex', alignItems: 'center',
-                    borderRadius: 4, flexShrink: 0, transition: 'color 0.1s',
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.2)'}
-            >
-                <TrashIcon />
-            </button>
-        )}
+        {/* Remove — always visible */}
+        <IconBtn onClick={(e) => { e.stopPropagation(); onRemove?.(); }} title="Remove" danger><TrashIcon /></IconBtn>
     </div>
 );
 
-const ElementTypeCard = ({ type, label, color, preview, onClick }) => (
+const AddCard = ({ label, color, preview, onClick }) => (
     <button
-        onClick={() => onClick(type)}
+        onClick={onClick}
         title={`Add ${label}`}
         style={{
             background: 'rgba(255,255,255,0.04)',
@@ -174,157 +164,206 @@ const ElementTypeCard = ({ type, label, color, preview, onClick }) => (
             transition: 'all 0.12s',
             minHeight: 52,
         }}
-        onMouseEnter={e => {
-            e.currentTarget.style.background = `${color}18`;
-            e.currentTarget.style.borderColor = `${color}50`;
-        }}
-        onMouseLeave={e => {
-            e.currentTarget.style.background = 'rgba(255,255,255,0.04)';
-            e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)';
-        }}
+        onMouseEnter={e => { e.currentTarget.style.background = `${color}18`; e.currentTarget.style.borderColor = `${color}50`; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.04)'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.08)'; }}
     >
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: 22, color }}>
             {preview}
         </div>
-        <span style={{ fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: 'rgba(255,255,255,0.4)', lineHeight: 1 }}>
+        <span style={{ fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: 'rgba(255,255,255,0.4)', lineHeight: 1, textAlign: 'center' }}>
             {label}
         </span>
     </button>
 );
 
-// ── Scenes ──────────────────────────────────────────────────────────────────
+// ── Scenes (dropdown) ─────────────────────────────────────────────────────────
 
-const SceneChip = ({ label, accent = '#6366f1', onClick, onDelete }) => (
-    <div style={{ position: 'relative', display: 'inline-flex' }}>
-        <button
-            onClick={onClick}
-            title={`Apply "${label}"`}
-            style={{
-                display: 'flex', alignItems: 'center', gap: 5,
-                padding: onDelete ? '4px 18px 4px 8px' : '4px 8px',
-                borderRadius: 7,
-                background: `${accent}14`,
-                border: `1px solid ${accent}40`,
-                color: 'rgba(255,255,255,0.78)',
-                fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5,
-                cursor: 'pointer', whiteSpace: 'nowrap', transition: 'all 0.12s',
-            }}
-            onMouseEnter={e => { e.currentTarget.style.background = `${accent}28`; }}
-            onMouseLeave={e => { e.currentTarget.style.background = `${accent}14`; }}
-        >
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: accent, flexShrink: 0, boxShadow: `0 0 5px ${accent}aa` }} />
-            {label}
-        </button>
-        {onDelete && (
-            <button
-                title="Delete scene"
-                onClick={(e) => { e.stopPropagation(); onDelete(); }}
-                style={{
-                    position: 'absolute', right: 3, top: '50%', transform: 'translateY(-50%)',
-                    background: 'none', border: 'none', padding: 0, cursor: 'pointer',
-                    color: 'rgba(255,255,255,0.3)', display: 'flex', alignItems: 'center',
-                }}
-                onMouseEnter={e => e.currentTarget.style.color = '#f87171'}
-                onMouseLeave={e => e.currentTarget.style.color = 'rgba(255,255,255,0.3)'}
-            >
-                <X size={10} />
-            </button>
-        )}
-    </div>
+const SceneDot = ({ color }) => (
+    <span style={{ width: 6, height: 6, borderRadius: '50%', background: color, flexShrink: 0, boxShadow: `0 0 5px ${color}aa` }} />
 );
 
-const ScenesSection = ({ scenes, onApply, onSave, onDelete }) => {
+// Scenes belong to the ACTIVE layout. This switches between them, saves the
+// current canvas as a new scene, updates a scene to match the canvas, or
+// deletes one. The "Layouts" link opens the gallery to switch which show (layout)
+// is active.
+const ScenesDropdown = ({ layoutName, scenes = [], activeSceneId, onSwitchScene, onSaveScene, onUpdateScene, onDeleteScene, onOpenLayouts }) => {
+    const [open, setOpen] = useState(false);
     const [adding, setAdding] = useState(false);
     const [name, setName] = useState('');
 
-    const commit = () => { onSave?.(name); setName(''); setAdding(false); };
-    const cancel = () => { setName(''); setAdding(false); };
+    const active = scenes.find(s => s.id === activeSceneId) ?? null;
+    const commitSave = () => { onSaveScene?.(name); setName(''); setAdding(false); };
 
     return (
-        <>
-            <SectionLabel>Scenes</SectionLabel>
-            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4, padding: '2px 2px 6px' }}>
-                {SCENE_PRESETS.map(p => (
-                    <SceneChip key={p.id} label={p.name} accent={p.accent} onClick={() => onApply?.(p.snapshot)} />
-                ))}
-                {scenes.map(s => (
-                    <SceneChip key={s.id} label={s.name} accent="#64748b" onClick={() => onApply?.(s.snapshot)} onDelete={() => onDelete?.(s.id)} />
-                ))}
+        <div style={{ padding: '0 2px' }}>
+            {/* Header: section label + layout (show) switcher */}
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '4px 8px 3px' }}>
+                <span style={{ fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 2, color: 'rgba(255,255,255,0.28)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {layoutName ? `Scenes · ${layoutName}` : 'Scenes'}
+                </span>
+                <button
+                    onClick={onOpenLayouts}
+                    title="Switch / manage layouts"
+                    style={{ display: 'flex', alignItems: 'center', gap: 3, background: 'none', border: 'none', cursor: 'pointer', color: '#a5b4fc', fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, flexShrink: 0 }}
+                >
+                    <Layers size={10} /> Layouts
+                </button>
             </div>
+
+            {/* Trigger */}
+            <button
+                onClick={() => setOpen(o => !o)}
+                style={{
+                    width: '100%', display: 'flex', alignItems: 'center', gap: 7,
+                    padding: '6px 9px', borderRadius: 7,
+                    background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.1)',
+                    color: 'rgba(255,255,255,0.78)', cursor: 'pointer',
+                    fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                }}
+            >
+                {active ? <SceneDot color="#818cf8" /> : <span style={{ width: 6, height: 6, borderRadius: '50%', border: '1px solid rgba(255,255,255,0.25)', flexShrink: 0 }} />}
+                <span style={{ flex: 1, textAlign: 'left', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', color: active ? 'rgba(255,255,255,0.85)' : 'rgba(255,255,255,0.4)' }}>
+                    {active ? active.name : (scenes.length ? 'Choose a scene…' : 'No scenes yet')}
+                </span>
+                <ChevronDown size={12} style={{ transform: open ? 'rotate(180deg)' : 'none', transition: 'transform 0.15s', opacity: 0.5, flexShrink: 0 }} />
+            </button>
+
+            <AnimatePresence>
+                {open && (
+                    <motion.div
+                        initial={{ opacity: 0, height: 0 }}
+                        animate={{ opacity: 1, height: 'auto' }}
+                        exit={{ opacity: 0, height: 0 }}
+                        style={{ overflow: 'hidden' }}
+                    >
+                        <div style={{
+                            marginTop: 4, padding: 4, borderRadius: 8,
+                            background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+                            display: 'flex', flexDirection: 'column', gap: 1,
+                        }}>
+                            {scenes.length === 0 && (
+                                <div style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.3)', padding: '6px 7px', lineHeight: 1.5 }}>
+                                    No scenes here yet — save the current canvas below.
+                                </div>
+                            )}
+                            {scenes.map(s => {
+                                const isActive = s.id === activeSceneId;
+                                return (
+                                    <div
+                                        key={s.id}
+                                        onClick={() => { onSwitchScene?.(s.id); setOpen(false); }}
+                                        title="Switch to this scene"
+                                        style={{
+                                            display: 'flex', alignItems: 'center', gap: 7, padding: '5px 7px',
+                                            borderRadius: 6, cursor: 'pointer',
+                                            background: isActive ? 'rgba(99,102,241,0.16)' : 'transparent',
+                                        }}
+                                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.05)'; }}
+                                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                                    >
+                                        <SceneDot color={isActive ? '#818cf8' : '#64748b'} />
+                                        <span style={{ flex: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', fontSize: 10, color: isActive ? 'rgba(255,255,255,0.9)' : 'rgba(255,255,255,0.7)' }}>
+                                            {s.name}
+                                        </span>
+                                        {isActive && (
+                                            <IconBtn onClick={(e) => { e.stopPropagation(); onUpdateScene?.(s.id); }} title="Update this scene to match the current canvas"><RotateCw size={10} /></IconBtn>
+                                        )}
+                                        <IconBtn onClick={(e) => { e.stopPropagation(); onDeleteScene?.(s.id); }} title="Delete scene" danger><X size={11} /></IconBtn>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
+
+            {/* Save current as scene — always visible (not hidden in the dropdown) */}
             {adding ? (
-                <div style={{ display: 'flex', gap: 4, marginBottom: 4 }}>
+                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
                     <input
                         autoFocus
                         value={name}
                         onChange={e => setName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') commit(); if (e.key === 'Escape') cancel(); }}
+                        onKeyDown={e => { if (e.key === 'Enter') commitSave(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
                         placeholder="Scene name…"
                         style={{
                             flex: 1, minWidth: 0, background: '#1a1a2e', border: '1px solid rgba(99,102,241,0.35)',
-                            borderRadius: 6, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '4px 6px', outline: 'none',
+                            borderRadius: 6, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '5px 7px', outline: 'none',
                         }}
                     />
-                    <button onClick={commit} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1, background: 'rgba(79,70,229,0.5)', border: '1px solid rgba(99,102,241,0.5)', color: '#fff', cursor: 'pointer', flexShrink: 0 }}>Save</button>
-                    <button onClick={cancel} style={{ padding: '4px 6px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', background: 'transparent', border: '1px solid rgba(255,255,255,0.1)', color: 'rgba(255,255,255,0.4)', cursor: 'pointer', flexShrink: 0 }}><X size={11} /></button>
+                    <button onClick={commitSave} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', background: 'rgba(79,70,229,0.5)', border: '1px solid rgba(99,102,241,0.5)', color: '#fff', cursor: 'pointer', flexShrink: 0 }}>Save</button>
                 </div>
             ) : (
                 <button
                     onClick={() => setAdding(true)}
+                    title="Save the current canvas as a new scene"
                     style={{
-                        width: '100%', padding: '5px 8px', borderRadius: 7, marginBottom: 4,
+                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 4,
+                        padding: '6px 8px', borderRadius: 7,
+                        background: 'rgba(99,102,241,0.12)', border: '1px dashed rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer',
                         fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
-                        background: 'rgba(99,102,241,0.1)', border: '1px dashed rgba(99,102,241,0.35)',
-                        color: '#a5b4fc', cursor: 'pointer', transition: 'all 0.12s', textAlign: 'left',
-                        display: 'flex', alignItems: 'center', gap: 5,
                     }}
+                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.2)'}
+                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.12)'}
                 >
-                    <Plus size={11} /> Save current layout
+                    <Plus size={11} /> Save current as scene
                 </button>
             )}
-        </>
+        </div>
     );
 };
 
 // ── Main panel ────────────────────────────────────────────────────────────────
 
-const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
-
 const LayersPanel = ({
-    // Built-in box visibility
+    // Built-in boxes (add on demand)
     boxVisibility,
-    onToggleBuiltin,
+    onAddBuiltin,
+    onRemoveBuiltin,
     // Elements
     elements,
     selectedElementId,
     selectedBox,
     onToggleElement,
     onDeleteElement,
+    onElementUp,
+    onElementDown,
     onSelectElement,
     onSelectBox,
-    // Add element
     onAddElement,
-    // Scenes
+    onPlaceElement,
+    // Scenes (of the active layout)
+    layoutName,
     scenes = [],
-    onApplyScene,
+    activeSceneId,
+    onSwitchScene,
     onSaveScene,
+    onUpdateScene,
     onDeleteScene,
+    onOpenLayouts,
     // Background / Theme / Reset
     onOpenBackground,
     onOpenTheme,
     onResetLayout,
-    // Camera live status (device assignment lives in the right panel now)
+    // Camera live status
     streams = {},
-    // Z-order
+    // Z-order (built-ins)
     zOrder = [],
     onLayerUp,
     onLayerDown,
 }) => {
-    // Higher index in zOrder = higher z = rendered on top = shown first in list
-    const zRank = (id) => {
-        const i = zOrder.indexOf(id);
-        return i === -1 ? -1 : i;
-    };
     const [showAddPanel, setShowAddPanel] = useState(false);
+
+    // Higher index in zOrder = rendered on top = shown first in list.
+    const zRank = (id) => zOrder.indexOf(id);
+
+    const presentBuiltins = BUILTIN_LAYERS
+        .filter(l => boxVisibility[l.id])
+        .sort((a, b) => zRank(b.id) - zRank(a.id));
+    const availableBuiltins = BUILTIN_LAYERS.filter(l => !boxVisibility[l.id]);
+
+    const visibleCount = presentBuiltins.length + elements.filter(e => !e.hidden).length;
+    const isEmpty = presentBuiltins.length === 0 && elements.length === 0;
 
     return (
         <motion.div
@@ -357,7 +396,7 @@ const LayersPanel = ({
                     Layers
                 </span>
                 <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.2)' }}>
-                    {Object.values(boxVisibility).filter(Boolean).length + elements.filter(e => !e.hidden).length} visible
+                    {visibleCount} visible
                 </span>
             </div>
 
@@ -365,14 +404,23 @@ const LayersPanel = ({
             <div style={{ flex: 1, overflowY: 'auto', padding: '4px 6px' }}>
 
                 {/* ── Scenes ── */}
-                <ScenesSection scenes={scenes} onApply={onApplyScene} onSave={onSaveScene} onDelete={onDeleteScene} />
+                <ScenesDropdown
+                    layoutName={layoutName}
+                    scenes={scenes}
+                    activeSceneId={activeSceneId}
+                    onSwitchScene={onSwitchScene}
+                    onSaveScene={onSaveScene}
+                    onUpdateScene={onUpdateScene}
+                    onDeleteScene={onDeleteScene}
+                    onOpenLayouts={onOpenLayouts}
+                />
                 <Divider />
 
-                {/* ── Unified Layers list ── */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 8px 4px' }}>
+                {/* ── Add ── */}
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 6px 4px' }}>
                     <button
                         onClick={() => setShowAddPanel(v => !v)}
-                        title="Add element"
+                        title="Add layer"
                         style={{
                             display: 'flex', alignItems: 'center', gap: 3,
                             background: showAddPanel ? 'rgba(99,102,241,0.22)' : 'transparent',
@@ -385,29 +433,79 @@ const LayersPanel = ({
                     </button>
                 </div>
 
-                {/* Built-in boxes (cameras + panels), sorted front → back */}
-                {[...BUILTIN_LAYERS]
-                    .sort((a, b) => zRank(b.id) - zRank(a.id))
-                    .map(layer => {
-                        const isCam = CAMERA_IDS.includes(layer.id);
-                        return (
-                            <LayerRow
-                                key={layer.id}
-                                icon={<layer.Icon size={13} color={layer.color} />}
-                                label={layer.label}
-                                color={layer.color}
-                                visible={boxVisibility[layer.id] ?? true}
-                                selected={selectedBox === layer.id}
-                                live={isCam ? !!streams[layer.id] : undefined}
-                                onSelect={() => onSelectBox(layer.id)}
-                                onToggle={() => onToggleBuiltin(layer.id)}
-                                onLayerUp={() => onLayerUp?.(layer.id)}
-                                onLayerDown={() => onLayerDown?.(layer.id)}
-                            />
-                        );
-                    })}
+                <AnimatePresence>
+                    {showAddPanel && (
+                        <motion.div
+                            initial={{ opacity: 0, height: 0 }}
+                            animate={{ opacity: 1, height: 'auto' }}
+                            exit={{ opacity: 0, height: 0 }}
+                            style={{ overflow: 'hidden' }}
+                        >
+                            {availableBuiltins.length > 0 && (
+                                <>
+                                    <SectionLabel>Components</SectionLabel>
+                                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '4px 2px' }}>
+                                        {availableBuiltins.map(l => (
+                                            <AddCard
+                                                key={l.id}
+                                                label={l.label}
+                                                color={l.color}
+                                                preview={<l.Icon size={16} color={l.color} />}
+                                                onClick={() => { onAddBuiltin(l.id); setShowAddPanel(false); }}
+                                            />
+                                        ))}
+                                    </div>
+                                </>
+                            )}
+                            <SectionLabel>Elements — click, then place on canvas</SectionLabel>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '4px 2px 6px' }}>
+                                {ELEMENT_TYPES.map(t => (
+                                    <AddCard
+                                        key={t.type}
+                                        label={t.label}
+                                        color={t.color}
+                                        preview={t.preview}
+                                        onClick={() => {
+                                            // Arm placement (click/drag on canvas) if available,
+                                            // else fall back to instant add.
+                                            if (onPlaceElement) onPlaceElement(t.type);
+                                            else onAddElement(t.type);
+                                            setShowAddPanel(false);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                            <Divider />
+                        </motion.div>
+                    )}
+                </AnimatePresence>
 
-                {/* Custom elements (rendered above boxes on the canvas) */}
+                {/* ── Unified layers list (components first, then elements) ── */}
+                {isEmpty && !showAddPanel && (
+                    <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.25)', fontSize: 9.5, fontFamily: 'monospace', lineHeight: 1.6, padding: '18px 10px' }}>
+                        No layers yet.<br />Hit <span style={{ color: '#a5b4fc' }}>+ Add</span> or pick a scene.
+                    </div>
+                )}
+
+                {presentBuiltins.map(layer => {
+                    const isCam = CAMERA_IDS.includes(layer.id);
+                    return (
+                        <LayerRow
+                            key={layer.id}
+                            icon={<layer.Icon size={13} color={layer.color} />}
+                            label={layer.label}
+                            color={layer.color}
+                            visible
+                            selected={selectedBox === layer.id}
+                            live={isCam ? !!streams[layer.id] : undefined}
+                            onSelect={() => onSelectBox(layer.id)}
+                            onUp={() => onLayerUp?.(layer.id)}
+                            onDown={() => onLayerDown?.(layer.id)}
+                            onRemove={() => onRemoveBuiltin(layer.id)}
+                        />
+                    );
+                })}
+
                 {elements.map((el) => {
                     const typeInfo = ELEMENT_TYPE_MAP[el.type];
                     return (
@@ -420,40 +518,12 @@ const LayersPanel = ({
                             selected={selectedElementId === el.id}
                             onSelect={() => onSelectElement(el.id)}
                             onToggle={() => onToggleElement(el.id)}
-                            onDelete={() => onDeleteElement(el.id)}
+                            onUp={() => onElementUp?.(el.id)}
+                            onDown={() => onElementDown?.(el.id)}
+                            onRemove={() => onDeleteElement(el.id)}
                         />
                     );
                 })}
-
-                <AnimatePresence>
-                    {showAddPanel && (
-                        <motion.div
-                            initial={{ opacity: 0, height: 0 }}
-                            animate={{ opacity: 1, height: 'auto' }}
-                            exit={{ opacity: 0, height: 0 }}
-                            style={{ overflow: 'hidden' }}
-                        >
-                            <div style={{
-                                display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5,
-                                padding: '6px 2px 4px',
-                            }}>
-                                {ELEMENT_TYPES.map(t => (
-                                    <ElementTypeCard
-                                        key={t.type}
-                                        type={t.type}
-                                        label={t.label}
-                                        color={t.color}
-                                        preview={t.preview}
-                                        onClick={(type) => {
-                                            onAddElement(type);
-                                            setShowAddPanel(false);
-                                        }}
-                                    />
-                                ))}
-                            </div>
-                        </motion.div>
-                    )}
-                </AnimatePresence>
             </div>
 
             {/* ── Footer actions ── */}

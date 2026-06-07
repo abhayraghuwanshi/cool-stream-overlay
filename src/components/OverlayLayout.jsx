@@ -1,5 +1,5 @@
-import { motion } from 'framer-motion';
-import { Check, Circle, RotateCcw } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
+import { Check, ChevronUp, Circle, Film, LayoutGrid, RotateCcw } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { layoutUrl } from '../config.js';
 import { useOBS } from '../context/OBSContext';
@@ -15,6 +15,8 @@ import LayersPanel from './LayersPanel';
 import SocialFeed from './SocialFeed';
 import ThemePanel from './ThemePanel';
 import VideoFeed from './VideoFeed';
+import CameraFrame, { DEFAULT_CAM_STYLE } from './CameraFrame';
+import LayoutGallery from './LayoutGallery';
 import { DEFAULT_THEME, getTheme } from '../theme/themes';
 import { packSnapshot } from '../scenes/packs';
 
@@ -69,13 +71,16 @@ const ElementBox = memo(
     )
 );
 
+// Built-ins are now "add on demand": a box is present in the composition only
+// when its flag is true. Nothing is active by default — you add components from
+// the Layers panel (or by applying a scene).
 const DEFAULT_VISIBILITY = {
-    faceCam: true,
-    handCam: true,
-    roomCam: true,
-    socialFeed: true,
-    aiCompanion: true,
-    currentTask: true,
+    faceCam: false,
+    handCam: false,
+    roomCam: false,
+    socialFeed: false,
+    aiCompanion: false,
+    currentTask: false,
 };
 
 // Per-session ID to suppress WS echoes of our own updates.
@@ -108,6 +113,12 @@ const OverlayLayout = () => {
 
     const [showBgPanel, setShowBgPanel] = useState(false);
     const [showThemePanel, setShowThemePanel] = useState(false);
+    const [showGallery, setShowGallery] = useState(false);
+    const [dockScenesOpen, setDockScenesOpen] = useState(false);
+    // When set, the next click/drag on the canvas places a new element of this
+    // type (click = default size at point, drag = drawn box). null = off.
+    const [placingType, setPlacingType] = useState(null);
+    const placePreviewRef = useRef(null);
     const themeRef = useRef(DEFAULT_THEME);
     themeRef.current = layoutSettings.theme ?? DEFAULT_THEME;
     const [editMode, setEditMode] = useState(false);
@@ -140,6 +151,21 @@ const OverlayLayout = () => {
             setSelectedElementId(null);
         }
     }, []);
+
+    // ── Element placement: arm a type (handlers defined after addElement) ────
+    const armPlace = useCallback((type) => {
+        setPlacingType(type);
+        setSelectedBox(null);
+        setSelectedElementId(null);
+    }, []);
+
+    // Escape cancels an armed placement.
+    useEffect(() => {
+        if (!placingType) return;
+        const onKey = (e) => { if (e.key === 'Escape') setPlacingType(null); };
+        window.addEventListener('keydown', onKey);
+        return () => window.removeEventListener('keydown', onKey);
+    }, [placingType]);
 
     // ── Stable layout updater (non-box settings only) ───────────────────────
     const updateLayout = useCallback((updates) => {
@@ -200,6 +226,12 @@ const OverlayLayout = () => {
         const nZ     = snapshot.zOrder ?? Object.keys(DEFAULT_BOXES);
         // A scene may carry a theme (theme packs do); otherwise keep the current one.
         const nTheme = snapshot.theme ? getTheme(snapshot.theme) : undefined;
+        // Saved layouts (not scenes) additionally carry camera frames + socials.
+        const extra = {};
+        if (snapshot.camStyles !== undefined) extra.camStyles = snapshot.camStyles;
+        if (snapshot.socialGithub !== undefined) extra.socialGithub = snapshot.socialGithub;
+        if (snapshot.socialTwitter !== undefined) extra.socialTwitter = snapshot.socialTwitter;
+        if (snapshot.socialLinkedin !== undefined) extra.socialLinkedin = snapshot.socialLinkedin;
 
         boxesRef.current = nBoxes;
         setBoxes(nBoxes);
@@ -215,6 +247,7 @@ const OverlayLayout = () => {
             showHandCam: nVis.handCam,
             showRoomCam: nVis.roomCam,
             ...(nTheme ? { theme: nTheme } : {}),
+            ...extra,
         }));
         fetch(layoutUrl(), {
             method: 'POST',
@@ -223,38 +256,128 @@ const OverlayLayout = () => {
                 boxes: nBoxes, elements: nEls, background: nBg, boxVisibility: nVis,
                 showFaceCam: nVis.faceCam, showHandCam: nVis.handCam, showRoomCam: nVis.roomCam,
                 ...(nTheme ? { theme: nTheme } : {}),
+                ...extra,
                 _clientId: SESSION_ID,
             }),
         }).catch(console.error);
     }, []);
 
-    const saveScene = useCallback((name) => {
-        const snapshot = {
-            boxes: boxesRef.current,
-            boxVisibility: layoutSettings.boxVisibility ?? DEFAULT_VISIBILITY,
-            elements: layoutSettings.elements ?? [],
-            background: layoutSettings.background,
-            zOrder,
-        };
-        const scenes = layoutSettings.scenes ?? [];
-        const scene = {
-            id: `scene_${Date.now()}`,
-            name: (name || '').trim() || `Scene ${scenes.length + 1}`,
-            snapshot,
-        };
-        updateLayout({ scenes: [...scenes, scene] });
-    }, [zOrder, layoutSettings.boxVisibility, layoutSettings.elements, layoutSettings.background, layoutSettings.scenes, updateLayout]);
-
-    const deleteScene = useCallback((id) => {
-        updateLayout({ scenes: (layoutSettings.scenes ?? []).filter(s => s.id !== id) });
-    }, [layoutSettings.scenes, updateLayout]);
-
     // Installing a pack applies its theme + signature scene in one shot.
     const installPack = useCallback((pack) => applyScene(packSnapshot(pack)), [applyScene]);
 
+    // ── Layouts → Scenes ─────────────────────────────────────────────────────
+    // A LAYOUT is a named container (a "show": e.g. Valorant Stream). It holds
+    // many SCENES (Intro / Gameplay / Outro). Each scene is a FULL snapshot of
+    // the whole composition, so scenes within a layout can look entirely
+    // different. The live canvas = the active scene of the active layout.
+    const captureSnapshot = useCallback(() => ({
+        boxes: boxesRef.current,
+        boxVisibility: layoutSettings.boxVisibility ?? DEFAULT_VISIBILITY,
+        elements: layoutSettings.elements ?? [],
+        background: layoutSettings.background ?? { type: 'solid', color: '#0a0a0f' },
+        zOrder,
+        theme: layoutSettings.theme ?? DEFAULT_THEME,
+        camStyles: layoutSettings.camStyles ?? {},
+        socialGithub: layoutSettings.socialGithub ?? '',
+        socialTwitter: layoutSettings.socialTwitter ?? '',
+        socialLinkedin: layoutSettings.socialLinkedin ?? '',
+    }), [zOrder, layoutSettings]);
+
+    const layouts = layoutSettings.layouts ?? [];
+    const activeLayoutId = layoutSettings.activeLayoutId ?? layouts[0]?.id ?? null;
+    const activeLayout = layouts.find(l => l.id === activeLayoutId) ?? null;
+    const activeScene = activeLayout?.scenes.find(s => s.id === activeLayout.activeSceneId) ?? activeLayout?.scenes[0] ?? null;
+
+    const writeLayouts = useCallback((nextLayouts, extra) =>
+        updateLayout({ layouts: nextLayouts, ...(extra || {}) }), [updateLayout]);
+
+    // ── Layout (container) ops ──
+    const createLayout = useCallback((name) => {
+        const sceneId = `scene_${Date.now()}`;
+        const layoutId = `layout_${Date.now()}`;
+        const scene = { id: sceneId, name: 'Scene 1', createdAt: Date.now(), snapshot: captureSnapshot() };
+        const layout = {
+            id: layoutId,
+            name: (name || '').trim() || `Layout ${layouts.length + 1}`,
+            createdAt: Date.now(),
+            scenes: [scene],
+            activeSceneId: sceneId,
+        };
+        writeLayouts([...layouts, layout], { activeLayoutId: layoutId });
+    }, [layouts, captureSnapshot, writeLayouts]);
+
+    const renameLayout = useCallback((id, name) => {
+        writeLayouts(layouts.map(l => l.id === id ? { ...l, name: (name || '').trim() || l.name } : l));
+    }, [layouts, writeLayouts]);
+
+    const deleteLayout = useCallback((id) => {
+        const next = layouts.filter(l => l.id !== id);
+        writeLayouts(next, id === activeLayoutId ? { activeLayoutId: next[0]?.id ?? null } : undefined);
+    }, [layouts, activeLayoutId, writeLayouts]);
+
+    const switchLayout = useCallback((id) => {
+        const l = layouts.find(x => x.id === id);
+        if (!l) return;
+        updateLayout({ activeLayoutId: id });
+        const scene = l.scenes.find(s => s.id === l.activeSceneId) ?? l.scenes[0];
+        if (scene) applyScene(scene.snapshot);
+    }, [layouts, updateLayout, applyScene]);
+
+    // ── Scene ops (operate on the active layout) ──
+    const saveScene = useCallback((name) => {
+        const snap = captureSnapshot();
+        let next = layouts;
+        let layoutId = activeLayoutId;
+        if (!activeLayout) {
+            // No layout yet — lazily create a Default container.
+            layoutId = `layout_${Date.now()}`;
+            next = [...layouts, { id: layoutId, name: 'Default', createdAt: Date.now(), scenes: [], activeSceneId: null }];
+        }
+        const count = (next.find(l => l.id === layoutId)?.scenes.length) || 0;
+        const scene = { id: `scene_${Date.now()}`, name: (name || '').trim() || `Scene ${count + 1}`, createdAt: Date.now(), snapshot: snap };
+        next = next.map(l => l.id === layoutId ? { ...l, scenes: [...l.scenes, scene], activeSceneId: scene.id } : l);
+        writeLayouts(next, { activeLayoutId: layoutId });
+    }, [layouts, activeLayout, activeLayoutId, captureSnapshot, writeLayouts]);
+
+    const switchScene = useCallback((sceneId) => {
+        if (!activeLayout) return;
+        const scene = activeLayout.scenes.find(s => s.id === sceneId);
+        writeLayouts(layouts.map(l => l.id === activeLayout.id ? { ...l, activeSceneId: sceneId } : l));
+        if (scene) applyScene(scene.snapshot);
+    }, [layouts, activeLayout, writeLayouts, applyScene]);
+
+    const updateScene = useCallback((sceneId) => {
+        if (!activeLayout) return;
+        const snap = captureSnapshot();
+        writeLayouts(layouts.map(l => l.id === activeLayout.id
+            ? { ...l, scenes: l.scenes.map(s => s.id === sceneId ? { ...s, snapshot: snap, updatedAt: Date.now() } : s) }
+            : l));
+    }, [layouts, activeLayout, captureSnapshot, writeLayouts]);
+
+    const renameScene = useCallback((sceneId, name) => {
+        if (!activeLayout) return;
+        writeLayouts(layouts.map(l => l.id === activeLayout.id
+            ? { ...l, scenes: l.scenes.map(s => s.id === sceneId ? { ...s, name: (name || '').trim() || s.name } : s) }
+            : l));
+    }, [layouts, activeLayout, writeLayouts]);
+
+    const deleteScene = useCallback((sceneId) => {
+        if (!activeLayout) return;
+        writeLayouts(layouts.map(l => l.id === activeLayout.id
+            ? {
+                ...l,
+                scenes: l.scenes.filter(s => s.id !== sceneId),
+                activeSceneId: l.activeSceneId === sceneId ? (l.scenes.find(s => s.id !== sceneId)?.id ?? null) : l.activeSceneId,
+            }
+            : l));
+    }, [layouts, activeLayout, writeLayouts]);
+
     // ── Element helpers ──────────────────────────────────────────────────────
-    const addElement = useCallback((type) => {
+    // `box` (optional) overrides the type's default position/size — used by
+    // canvas placement (click = default size at point, drag = drawn box).
+    const addElement = useCallback((type, box) => {
         const el = defaultElement(type, themeRef.current);
+        if (box) el.box = box;
         setLayoutSettings(s => {
             const newElements = [...(s.elements ?? []), el];
             fetch(layoutUrl(), {
@@ -265,7 +388,70 @@ const OverlayLayout = () => {
             return { ...s, elements: newElements };
         });
         setSelectedElementId(el.id);
+        setSelectedBox(null);
     }, []);
+
+    // Canvas placement gesture: click = default-size at point, drag = drawn box.
+    const onPlaceMouseDown = useCallback((e) => {
+        const type = placingType;
+        const canvas = canvasRef.current;
+        if (!type || !canvas) return;
+        e.preventDefault();
+        e.stopPropagation();
+
+        const rect = canvas.getBoundingClientRect();
+        const startX = e.clientX, startY = e.clientY;
+        let moved = false;
+        const preview = placePreviewRef.current;
+
+        const onMove = (ev) => {
+            const dx = ev.clientX - startX, dy = ev.clientY - startY;
+            if (!moved && Math.abs(dx) < 5 && Math.abs(dy) < 5) return;
+            moved = true;
+            if (preview) {
+                preview.style.display = 'block';
+                preview.style.left = `${Math.min(startX, ev.clientX) - rect.left}px`;
+                preview.style.top = `${Math.min(startY, ev.clientY) - rect.top}px`;
+                preview.style.width = `${Math.abs(dx)}px`;
+                preview.style.height = `${Math.abs(dy)}px`;
+            }
+        };
+
+        const onUp = (ev) => {
+            window.removeEventListener('mousemove', onMove);
+            window.removeEventListener('mouseup', onUp);
+            if (preview) preview.style.display = 'none';
+            const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
+
+            let box;
+            if (moved) {
+                // Drag → element fills the drawn rectangle.
+                const left = Math.min(startX, ev.clientX) - rect.left;
+                const top = Math.min(startY, ev.clientY) - rect.top;
+                box = {
+                    x: clamp((left / rect.width) * 100, 0, 100),
+                    y: clamp((top / rect.height) * 100, 0, 100),
+                    w: clamp((Math.abs(ev.clientX - startX) / rect.width) * 100, 4, 100),
+                    h: clamp((Math.abs(ev.clientY - startY) / rect.height) * 100, 3, 100),
+                };
+            } else {
+                // Click → default-size element centered on the click point.
+                const def = defaultElement(type).box;
+                const cx = ((startX - rect.left) / rect.width) * 100;
+                const cy = ((startY - rect.top) / rect.height) * 100;
+                box = {
+                    x: clamp(cx - def.w / 2, 0, 100 - def.w),
+                    y: clamp(cy - def.h / 2, 0, 100 - def.h),
+                    w: def.w, h: def.h,
+                };
+            }
+            addElement(type, box);
+            setPlacingType(null);
+        };
+
+        window.addEventListener('mousemove', onMove);
+        window.addEventListener('mouseup', onUp);
+    }, [placingType, addElement]);
 
     const updateElement = useCallback((id, changes) => {
         setLayoutSettings(s => {
@@ -345,13 +531,16 @@ const OverlayLayout = () => {
         return (layoutSettings.boxVisibility ?? DEFAULT_VISIBILITY)[id] ?? true;
     }, [layoutSettings.boxVisibility]);
 
-    const toggleBuiltinVisibility = useCallback((id) => {
+    // A built-in box is "present" when its visibility flag is true. Adding sets
+    // it true (and selects it); removing sets it false (taking it off the
+    // canvas and out of the layers list).
+    const setBuiltinVisible = useCallback((id, value) => {
         setLayoutSettings(s => {
             const bv = s.boxVisibility ?? DEFAULT_VISIBILITY;
-            const updates = { boxVisibility: { ...bv, [id]: !(bv[id] ?? true) } };
-            if (id === 'faceCam') updates.showFaceCam = !updates.boxVisibility[id];
-            if (id === 'handCam') updates.showHandCam = !updates.boxVisibility[id];
-            if (id === 'roomCam') updates.showRoomCam = !updates.boxVisibility[id];
+            const updates = { boxVisibility: { ...bv, [id]: value } };
+            if (id === 'faceCam') updates.showFaceCam = value;
+            if (id === 'handCam') updates.showHandCam = value;
+            if (id === 'roomCam') updates.showRoomCam = value;
             fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
@@ -361,13 +550,66 @@ const OverlayLayout = () => {
         });
     }, []);
 
-    // ── Hosted layout sync (polling) ─────────────────────────────────────────
-    // The design lives in the hosted /api store. OBS (and any viewer) pulls it
-    // by polling every ~2s — no WebSocket, nothing to run locally. We skip
-    // applying while editMode is on so polls can't fight your in-progress edits;
-    // your own writes go out via the POSTs in the updaters above.
+    const addBuiltin = useCallback((id) => {
+        setBuiltinVisible(id, true);
+        selectBox(id); // also brings it to the front of the z-order
+    }, [setBuiltinVisible, selectBox]);
+
+    const removeBuiltin = useCallback((id) => {
+        setBuiltinVisible(id, false);
+        setSelectedBox(prev => (prev === id ? null : prev));
+    }, [setBuiltinVisible]);
+
+    // Reorder a custom element within the stack. Earlier in the array renders on
+    // top (see zIndex below), so "up" = toward the front / top of the list.
+    const moveElement = useCallback((id, dir) => {
+        setLayoutSettings(s => {
+            const els = s.elements ?? [];
+            const i = els.findIndex(e => e.id === id);
+            const j = i + dir;
+            if (i < 0 || j < 0 || j >= els.length) return s;
+            const next = [...els];
+            [next[i], next[j]] = [next[j], next[i]];
+            fetch(layoutUrl(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ elements: next, _clientId: SESSION_ID }),
+            }).catch(console.error);
+            return { ...s, elements: next };
+        });
+    }, []);
+    const elementUp = useCallback((id) => moveElement(id, -1), [moveElement]);
+    const elementDown = useCallback((id) => moveElement(id, +1), [moveElement]);
+
+    // Per-camera frame styling (frame preset, accent, corner radius).
+    const updateCamStyle = useCallback((slot, changes) => {
+        setLayoutSettings(s => {
+            const cur = s.camStyles ?? {};
+            const next = { ...cur, [slot]: { ...DEFAULT_CAM_STYLE, ...(cur[slot] ?? {}), ...changes } };
+            fetch(layoutUrl(), {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ camStyles: next, _clientId: SESSION_ID }),
+            }).catch(console.error);
+            return { ...s, camStyles: next };
+        });
+    }, []);
+
+    // ── Hosted layout sync (adaptive polling) ────────────────────────────────
+    // The design lives in the hosted /api store; viewers (OBS) pull it by
+    // polling — no WebSocket. To avoid hammering the backend (and burning KV
+    // quota), the loop is adaptive: it polls quickly right after a change, then
+    // backs off to a slow cadence when the layout is unchanged, and pauses
+    // entirely while you're editing or the tab is hidden. It also short-circuits
+    // re-renders when the fetched payload is identical to the last one.
+    const POLL_FAST = 3000;   // ms — recently changed / just became visible
+    const POLL_SLOW = 20000;  // ms — settled, nothing changing
+    const POLL_MISSES_TO_SLOW = 3;
     useEffect(() => {
         let isMounted = true;
+        let timer;
+        let lastSig = null;   // signature of the last applied payload
+        let misses = 0;       // consecutive unchanged polls
 
         const applyData = (data) => {
             if (!isMounted || !data || typeof data !== 'object') return;
@@ -382,28 +624,57 @@ const OverlayLayout = () => {
                 ...rest,
                 boxVisibility: {
                     ...DEFAULT_VISIBILITY,
-                    faceCam: data.showFaceCam ?? data.boxVisibility?.faceCam ?? true,
-                    handCam: data.showHandCam ?? data.boxVisibility?.handCam ?? true,
-                    roomCam: data.showRoomCam ?? data.boxVisibility?.roomCam ?? true,
+                    // Honor legacy show* flags only when explicitly present —
+                    // an empty slot stays all-false (nothing active by default).
+                    ...(data.showFaceCam !== undefined ? { faceCam: data.showFaceCam } : {}),
+                    ...(data.showHandCam !== undefined ? { handCam: data.showHandCam } : {}),
+                    ...(data.showRoomCam !== undefined ? { roomCam: data.showRoomCam } : {}),
                     ...(data.boxVisibility ?? {}),
                 },
             }));
         };
 
-        const poll = (force) => {
-            if (editModeRef.current && !force) return; // don't clobber live edits
-            fetch(layoutUrl())
-                .then(res => (res.ok ? res.json() : null))
-                .then(applyData)
-                .catch(() => { });
+        const tick = async (force) => {
+            if (!isMounted) return;
+            // Don't poll while editing (we're the writer) or when the tab is
+            // hidden (e.g. a backgrounded editor) — except a forced first load.
+            const skip = !force && (editModeRef.current || document.hidden);
+            if (!skip) {
+                try {
+                    const res = await fetch(layoutUrl());
+                    if (res.ok) {
+                        const data = await res.json();
+                        const sig = JSON.stringify(data);
+                        if (sig !== lastSig) {
+                            lastSig = sig;
+                            misses = 0;
+                            applyData(data);
+                        } else {
+                            misses++;
+                        }
+                    }
+                } catch { /* offline / transient — try again next tick */ }
+            }
+            if (!isMounted) return;
+            const delay = misses >= POLL_MISSES_TO_SLOW ? POLL_SLOW : POLL_FAST;
+            timer = setTimeout(tick, delay);
         };
 
-        poll(true); // initial load
-        const timer = setInterval(poll, 2000);
+        // Poll promptly again whenever the tab regains focus.
+        const onVisible = () => {
+            if (document.hidden) return;
+            misses = 0;
+            clearTimeout(timer);
+            tick();
+        };
+        document.addEventListener('visibilitychange', onVisible);
+
+        tick(true); // initial load (even if mounted in edit mode)
 
         return () => {
             isMounted = false;
-            clearInterval(timer);
+            clearTimeout(timer);
+            document.removeEventListener('visibilitychange', onVisible);
         };
     }, []);
 
@@ -427,9 +698,18 @@ const OverlayLayout = () => {
 
     // ── Memoised DraggableBox children — prevents re-renders on box drag ─────
     // Each child only re-creates when its own data changes (stream, social info, etc.)
-    const faceCamChild = useMemo(() => <VideoFeed stream={streams.faceCam} label="CAM 01" />, [streams.faceCam]);
-    const handCamChild = useMemo(() => <VideoFeed stream={streams.handCam} label="HAND" />, [streams.handCam]);
-    const roomCamChild = useMemo(() => <VideoFeed stream={streams.roomCam} label="ROOM" />, [streams.roomCam]);
+    const camStyles = layoutSettings.camStyles ?? {};
+    const framedCam = (slot, stream, label) => {
+        const cs = camStyles[slot] ?? DEFAULT_CAM_STYLE;
+        return (
+            <CameraFrame frame={cs.frame} radius={cs.radius} accent={cs.accent ?? theme.accent} accent2={cs.accent2 ?? theme.accent2}>
+                <VideoFeed stream={stream} label={label} />
+            </CameraFrame>
+        );
+    };
+    const faceCamChild = useMemo(() => framedCam('faceCam', streams.faceCam, 'CAM 01'), [streams.faceCam, camStyles.faceCam, theme.accent, theme.accent2]);
+    const handCamChild = useMemo(() => framedCam('handCam', streams.handCam, 'HAND'), [streams.handCam, camStyles.handCam, theme.accent, theme.accent2]);
+    const roomCamChild = useMemo(() => framedCam('roomCam', streams.roomCam, 'ROOM'), [streams.roomCam, camStyles.roomCam, theme.accent, theme.accent2]);
     const socialFeedChild = useMemo(() => (
         <div className="w-full h-full overflow-hidden">
             <SocialFeed github={socialGithub} twitter={socialTwitter} linkedin={socialLinkedin} />
@@ -496,6 +776,7 @@ const OverlayLayout = () => {
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                        <HdrBtn onClick={() => setShowGallery(true)}><LayoutGrid size={12} style={{ marginRight: 4 }} />Layouts</HdrBtn>
                         <HdrBtn onClick={resetLayout}><RotateCcw size={12} style={{ marginRight: 4 }} />Reset</HdrBtn>
                         <HdrSep />
                         <button
@@ -513,19 +794,28 @@ const OverlayLayout = () => {
                 }}>
                     <LayersPanel
                         boxVisibility={boxVisibility}
-                        onToggleBuiltin={toggleBuiltinVisibility}
+                        onAddBuiltin={addBuiltin}
+                        onRemoveBuiltin={removeBuiltin}
                         elements={elements}
                         selectedElementId={selectedElementId}
                         selectedBox={selectedBox}
                         onToggleElement={toggleElementVisibility}
                         onDeleteElement={deleteElement}
+                        onElementUp={elementUp}
+                        onElementDown={elementDown}
                         onSelectElement={selectElement}
                         onSelectBox={selectBox}
                         onAddElement={addElement}
-                        scenes={layoutSettings.scenes ?? []}
-                        onApplyScene={applyScene}
+                        onPlaceElement={armPlace}
+                        layoutName={activeLayout?.name ?? null}
+                        scenes={activeLayout?.scenes ?? []}
+                        activeSceneId={activeLayout?.activeSceneId ?? null}
+                        onSwitchScene={switchScene}
                         onSaveScene={saveScene}
+                        onUpdateScene={updateScene}
+                        onRenameScene={renameScene}
                         onDeleteScene={deleteScene}
+                        onOpenLayouts={() => setShowGallery(true)}
                         onOpenBackground={() => { setShowBgPanel(v => !v); setShowThemePanel(false); }}
                         onOpenTheme={() => { setShowThemePanel(v => !v); setShowBgPanel(false); }}
                         onResetLayout={resetLayout}
@@ -559,6 +849,8 @@ const OverlayLayout = () => {
                                 onStart={capture.startCameraStream}
                                 onStop={capture.stopCameraStream}
                                 error={capture.errors[selectedCamera]}
+                                camStyle={{ ...DEFAULT_CAM_STYLE, accent: theme.accent, ...(camStyles[selectedCamera] ?? {}) }}
+                                onChangeCamStyle={(changes) => updateCamStyle(selectedCamera, changes)}
                             />
                         )}
                     </div>
@@ -638,7 +930,7 @@ const OverlayLayout = () => {
                             <ElementBox
                                 key={el.id}
                                 element={el}
-                                zIndex={100 + i + (selectedElementId === el.id ? 50 : 0)}
+                                zIndex={100 + (elements.length - 1 - i) + (selectedElementId === el.id ? 50 : 0)}
                                 selected={selectedElementId === el.id}
                                 onSelect={selectElement}
                                 onBoxChange={updateElementBox}
@@ -656,6 +948,28 @@ const OverlayLayout = () => {
                     {shouldRenderBox('handCam') && <DraggableBox id="handCam" title="Hand Cam" box={boxes.handCam} zIndex={getZIndex('handCam')} selected={selectedBox === 'handCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{handCamChild}</DraggableBox>}
                     {shouldRenderBox('roomCam') && <DraggableBox id="roomCam" title="Room Cam" box={boxes.roomCam} zIndex={getZIndex('roomCam')} selected={selectedBox === 'roomCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{roomCamChild}</DraggableBox>}
                     {shouldRenderBox('currentTask') && <DraggableBox id="currentTask" title="Current Task" box={boxes.currentTask} zIndex={getZIndex('currentTask')} selected={selectedBox === 'currentTask'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{currentTaskChild}</DraggableBox>}
+
+                    {/* ── Placement layer — click to drop / drag to draw a new element ── */}
+                    {inEditor && placingType && (
+                        <div
+                            onMouseDown={onPlaceMouseDown}
+                            onContextMenu={(e) => { e.preventDefault(); setPlacingType(null); }}
+                            style={{ position: 'absolute', inset: 0, zIndex: 500, cursor: 'crosshair' }}
+                        >
+                            <div ref={placePreviewRef} style={{
+                                position: 'absolute', display: 'none', pointerEvents: 'none',
+                                border: '1px dashed rgba(165,180,252,0.9)', background: 'rgba(99,102,241,0.15)', borderRadius: 4,
+                            }} />
+                            <div style={{
+                                position: 'absolute', top: 10, left: '50%', transform: 'translateX(-50%)', pointerEvents: 'none',
+                                background: 'rgba(10,10,20,0.9)', border: '1px solid rgba(99,102,241,0.4)', borderRadius: 8,
+                                padding: '5px 12px', fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                                color: '#a5b4fc', whiteSpace: 'nowrap',
+                            }}>
+                                Click or drag to place {placingType} · Esc to cancel
+                            </div>
+                        </div>
+                    )}
                 </div>
             </div>
 
@@ -663,9 +977,75 @@ const OverlayLayout = () => {
             {!editMode && !isRecording && (
                 <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
+                        {/* Scene switcher — change scene without entering edit mode */}
+                        {activeLayout && activeLayout.scenes.length > 0 && (
+                            <div style={{ position: 'relative' }}>
+                                <DockBtn active={dockScenesOpen} onClick={() => setDockScenesOpen(o => !o)} title="Switch scene">
+                                    <Film size={11} style={{ marginRight: 4 }} />
+                                    {activeScene?.name ?? 'Scene'}
+                                    <ChevronUp size={11} style={{ marginLeft: 4, transform: dockScenesOpen ? 'none' : 'rotate(180deg)', transition: 'transform 0.15s', opacity: 0.6 }} />
+                                </DockBtn>
+                                <AnimatePresence>
+                                    {dockScenesOpen && (
+                                        <motion.div
+                                            initial={{ opacity: 0, y: 6 }}
+                                            animate={{ opacity: 1, y: 0 }}
+                                            exit={{ opacity: 0, y: 6 }}
+                                            transition={{ duration: 0.14 }}
+                                            style={{
+                                                position: 'absolute', bottom: 'calc(100% + 8px)', left: 0, minWidth: 168,
+                                                background: 'rgba(6,6,16,0.96)', backdropFilter: 'blur(24px)',
+                                                border: '1px solid rgba(255,255,255,0.1)', borderRadius: 10, padding: 5,
+                                                boxShadow: '0 8px 40px rgba(0,0,0,0.72)', display: 'flex', flexDirection: 'column', gap: 1,
+                                            }}
+                                        >
+                                            {activeLayout.scenes.map(s => {
+                                                const isActive = s.id === activeLayout.activeSceneId;
+                                                return (
+                                                    <button
+                                                        key={s.id}
+                                                        onClick={() => { switchScene(s.id); setDockScenesOpen(false); }}
+                                                        style={{
+                                                            display: 'flex', alignItems: 'center', gap: 7, padding: '6px 9px', borderRadius: 6,
+                                                            background: isActive ? 'rgba(99,102,241,0.2)' : 'transparent', border: 'none', cursor: 'pointer',
+                                                            color: 'rgba(255,255,255,0.85)', fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase',
+                                                            letterSpacing: 1, textAlign: 'left', whiteSpace: 'nowrap',
+                                                        }}
+                                                        onMouseEnter={e => { if (!isActive) e.currentTarget.style.background = 'rgba(255,255,255,0.06)'; }}
+                                                        onMouseLeave={e => { if (!isActive) e.currentTarget.style.background = 'transparent'; }}
+                                                    >
+                                                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: isActive ? '#818cf8' : '#64748b', flexShrink: 0 }} />
+                                                        <span style={{ flex: 1 }}>{s.name}</span>
+                                                        {isActive && <Check size={11} color="#a5b4fc" />}
+                                                    </button>
+                                                );
+                                            })}
+                                        </motion.div>
+                                    )}
+                                </AnimatePresence>
+                            </div>
+                        )}
+                        {activeLayout && activeLayout.scenes.length > 0 && <HdrSep />}
+                        <DockBtn onClick={() => setShowGallery(true)} title="Browse & switch saved layouts">
+                            <LayoutGrid size={11} style={{ marginRight: 4 }} />Layouts
+                        </DockBtn>
+                        <HdrSep />
                         <DockBtn onClick={() => setEditMode(true)}>Edit Layout</DockBtn>
                     </div>
                 </div>
+            )}
+
+            {/* Layouts gallery (the show/collection switcher) — both modes */}
+            {showGallery && (
+                <LayoutGallery
+                    layouts={layouts}
+                    activeLayoutId={activeLayoutId}
+                    onClose={() => setShowGallery(false)}
+                    onCreate={createLayout}
+                    onSwitch={(id) => { switchLayout(id); setShowGallery(false); }}
+                    onRename={renameLayout}
+                    onDelete={deleteLayout}
+                />
             )}
         </div>
     );

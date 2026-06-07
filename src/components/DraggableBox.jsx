@@ -157,13 +157,16 @@ const DraggableBox = ({
     };
 
     // ── Outline color ─────────────────────────────────────────────────────────
+    // null = no outline at all. In live/OBS mode we must emit `outline: none`,
+    // not `1px solid none` (a malformed value that renders a phantom 1px border
+    // around things like camera frames).
     const outlineColor = editMode
         ? selected
             ? 'rgba(99,102,241,0.9)'
             : hovered
                 ? 'rgba(99,102,241,0.4)'
                 : 'rgba(99,102,241,0.2)'
-        : 'none';
+        : null;
 
     return (
         <div
@@ -181,7 +184,7 @@ const DraggableBox = ({
                 height:   `${box.h}%`,
                 overflow:     'hidden',
                 boxSizing:    'border-box',
-                outline:      `1px solid ${outlineColor}`,
+                outline:      outlineColor ? `1px solid ${outlineColor}` : 'none',
                 borderRadius: 4,
                 zIndex,
                 transition:   'outline-color 0.12s, opacity 0.15s',

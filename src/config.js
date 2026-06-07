@@ -12,6 +12,15 @@ const BACKEND_PORT = 3388;
 export const BACKEND_HTTP = `http://127.0.0.1:${BACKEND_PORT}`;
 export const BACKEND_WS = `ws://127.0.0.1:${BACKEND_PORT}`;
 
+// The local sidecar only exists when you're running on your own machine. From a
+// deployed (https) host or inside OBS it's both unreachable and blocked as mixed
+// content, so don't even attempt to connect — that's what spams WS errors.
+export function hasLocalSidecar() {
+    if (typeof window === 'undefined') return false;
+    const h = window.location.hostname;
+    return h === 'localhost' || h === '127.0.0.1' || h === '';
+}
+
 // ── Hosted layout store ──────────────────────────────────────────────────────
 // The overlay design lives in a serverless /api function (Vercel) backed by a
 // small KV store — so OBS can load it from an always-on URL with nothing to

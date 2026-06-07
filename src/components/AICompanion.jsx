@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
 import { Bot, Image as ImageIcon, Link as LinkIcon, User } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { BACKEND_WS } from '../config.js';
+import { BACKEND_WS, hasLocalSidecar } from '../config.js';
 
 const AICompanion = () => {
     const [messages, setMessages] = useState([]);
@@ -13,7 +13,9 @@ const AICompanion = () => {
         let isMounted = true;
 
         const connectWs = () => {
-            if (!isMounted) return;
+            // No local sidecar when deployed / inside OBS — skip so we don't spam
+            // unreachable ws:// reconnect attempts every 3s.
+            if (!isMounted || !hasLocalSidecar()) return;
 
             ws = new WebSocket(BACKEND_WS);
 
