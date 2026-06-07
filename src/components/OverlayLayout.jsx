@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion';
 import { Check, Circle, RotateCcw } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { BACKEND_HTTP, BACKEND_WS } from '../config.js';
+import { layoutUrl } from '../config.js';
 import { useOBS } from '../context/OBSContext';
 import useCapture from '../hooks/useCapture';
 import AICompanion from './AICompanion';
@@ -111,6 +111,11 @@ const OverlayLayout = () => {
     const themeRef = useRef(DEFAULT_THEME);
     themeRef.current = layoutSettings.theme ?? DEFAULT_THEME;
     const [editMode, setEditMode] = useState(false);
+    // Mirror editMode into a ref so the polling loop can read it without
+    // resubscribing. While editing, polled server data must not clobber the
+    // local edits you're making.
+    const editModeRef = useRef(editMode);
+    editModeRef.current = editMode;
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
@@ -139,7 +144,7 @@ const OverlayLayout = () => {
     // ── Stable layout updater (non-box settings only) ───────────────────────
     const updateLayout = useCallback((updates) => {
         setLayoutSettings(s => ({ ...s, ...updates }));
-        fetch(`${BACKEND_HTTP}/layout`, {
+        fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ ...updates, _clientId: SESSION_ID }),
@@ -153,7 +158,7 @@ const OverlayLayout = () => {
     const updateTheme = useCallback((changes) =>
         setLayoutSettings(s => {
             const theme = { ...(s.theme ?? DEFAULT_THEME), ...changes };
-            fetch(`${BACKEND_HTTP}/layout`, {
+            fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ theme, _clientId: SESSION_ID }),
@@ -166,7 +171,7 @@ const OverlayLayout = () => {
         const updated = { ...boxesRef.current, [id]: newBox };
         boxesRef.current = updated;
         setBoxes(updated);
-        fetch(`${BACKEND_HTTP}/layout`, {
+        fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ boxes: updated, _clientId: SESSION_ID }),
@@ -176,7 +181,7 @@ const OverlayLayout = () => {
     const resetLayout = useCallback(() => {
         boxesRef.current = DEFAULT_BOXES;
         setBoxes(DEFAULT_BOXES);
-        fetch(`${BACKEND_HTTP}/layout`, {
+        fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ boxes: DEFAULT_BOXES, _clientId: SESSION_ID }),
@@ -211,7 +216,7 @@ const OverlayLayout = () => {
             showRoomCam: nVis.roomCam,
             ...(nTheme ? { theme: nTheme } : {}),
         }));
-        fetch(`${BACKEND_HTTP}/layout`, {
+        fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
@@ -252,7 +257,7 @@ const OverlayLayout = () => {
         const el = defaultElement(type, themeRef.current);
         setLayoutSettings(s => {
             const newElements = [...(s.elements ?? []), el];
-            fetch(`${BACKEND_HTTP}/layout`, {
+            fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ elements: newElements, _clientId: SESSION_ID }),
@@ -265,7 +270,7 @@ const OverlayLayout = () => {
     const updateElement = useCallback((id, changes) => {
         setLayoutSettings(s => {
             const newElements = (s.elements ?? []).map(el => el.id === id ? { ...el, ...changes } : el);
-            fetch(`${BACKEND_HTTP}/layout`, {
+            fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ elements: newElements, _clientId: SESSION_ID }),
@@ -277,7 +282,7 @@ const OverlayLayout = () => {
     const deleteElement = useCallback((id) => {
         setLayoutSettings(s => {
             const newElements = (s.elements ?? []).filter(el => el.id !== id);
-            fetch(`${BACKEND_HTTP}/layout`, {
+            fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ elements: newElements, _clientId: SESSION_ID }),
@@ -347,7 +352,7 @@ const OverlayLayout = () => {
             if (id === 'faceCam') updates.showFaceCam = !updates.boxVisibility[id];
             if (id === 'handCam') updates.showHandCam = !updates.boxVisibility[id];
             if (id === 'roomCam') updates.showRoomCam = !updates.boxVisibility[id];
-            fetch(`${BACKEND_HTTP}/layout`, {
+            fetch(layoutUrl(), {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ ...updates, _clientId: SESSION_ID }),
@@ -356,73 +361,49 @@ const OverlayLayout = () => {
         });
     }, []);
 
-    // ── Backend sync ─────────────────────────────────────────────────────────
+    // ── Hosted layout sync (polling) ─────────────────────────────────────────
+    // The design lives in the hosted /api store. OBS (and any viewer) pulls it
+    // by polling every ~2s — no WebSocket, nothing to run locally. We skip
+    // applying while editMode is on so polls can't fight your in-progress edits;
+    // your own writes go out via the POSTs in the updaters above.
     useEffect(() => {
-        let ws;
-        let reconnectTimeout;
         let isMounted = true;
 
-        const fetchLayout = () => {
-            fetch(`${BACKEND_HTTP}/layout`)
-                .then(res => res.json())
-                .then(data => {
-                    if (!isMounted) return;
-                    // Boxes go into separate state
-                    if (data.boxes) {
-                        const newBoxes = { ...DEFAULT_BOXES, ...(data.boxes ?? {}) };
-                        boxesRef.current = newBoxes;
-                        setBoxes(newBoxes);
-                    }
-                    const { boxes: _b, ...rest } = data;
-                    setLayoutSettings(s => ({
-                        ...s,
-                        ...rest,
-                        boxVisibility: {
-                            ...DEFAULT_VISIBILITY,
-                            faceCam: data.showFaceCam ?? data.boxVisibility?.faceCam ?? true,
-                            handCam: data.showHandCam ?? data.boxVisibility?.handCam ?? true,
-                            roomCam: data.showRoomCam ?? data.boxVisibility?.roomCam ?? true,
-                            ...(data.boxVisibility ?? {}),
-                        },
-                    }));
-                })
-                .catch(console.error);
+        const applyData = (data) => {
+            if (!isMounted || !data || typeof data !== 'object') return;
+            if (data.boxes) {
+                const newBoxes = { ...DEFAULT_BOXES, ...data.boxes };
+                boxesRef.current = newBoxes;
+                setBoxes(newBoxes);
+            }
+            const { boxes: _b, ...rest } = data;
+            setLayoutSettings(s => ({
+                ...s,
+                ...rest,
+                boxVisibility: {
+                    ...DEFAULT_VISIBILITY,
+                    faceCam: data.showFaceCam ?? data.boxVisibility?.faceCam ?? true,
+                    handCam: data.showHandCam ?? data.boxVisibility?.handCam ?? true,
+                    roomCam: data.showRoomCam ?? data.boxVisibility?.roomCam ?? true,
+                    ...(data.boxVisibility ?? {}),
+                },
+            }));
         };
 
-        const connectWs = () => {
-            if (!isMounted) return;
-            ws = new WebSocket(BACKEND_WS);
-            ws.onopen = fetchLayout;
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
-                    if (data.type === 'layout-update') {
-                        if (data._clientId === SESSION_ID) return; // skip our own echo
-                        const { boxes: newBoxes, ...rest } = data.payload ?? {};
-                        if (newBoxes) {
-                            const merged = { ...DEFAULT_BOXES, ...newBoxes };
-                            boxesRef.current = merged;
-                            setBoxes(merged);
-                        }
-                        setLayoutSettings(s => ({
-                            ...s,
-                            ...rest,
-                            ...(rest.boxes ? {} : {}), // boxes handled above
-                        }));
-                    }
-                } catch (e) { }
-            };
-            ws.onclose = () => {
-                if (!isMounted) return;
-                reconnectTimeout = setTimeout(connectWs, 3000);
-            };
+        const poll = (force) => {
+            if (editModeRef.current && !force) return; // don't clobber live edits
+            fetch(layoutUrl())
+                .then(res => (res.ok ? res.json() : null))
+                .then(applyData)
+                .catch(() => { });
         };
-        connectWs();
+
+        poll(true); // initial load
+        const timer = setInterval(poll, 2000);
 
         return () => {
             isMounted = false;
-            clearTimeout(reconnectTimeout);
-            if (ws) { ws.onclose = null; ws.close(); }
+            clearInterval(timer);
         };
     }, []);
 
