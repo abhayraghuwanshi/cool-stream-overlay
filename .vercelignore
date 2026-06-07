@@ -1,0 +1,8 @@
+# Local-only Node sidecar (local LLM via llama.cpp + OBS WebSocket control).
+# Not part of the Vercel deploy — Vercel only needs the Vite app + api/ functions.
+backend/
+
+# Chrome extension, local launcher, and docs aren't deployed either.
+extension/
+start_overlay.bat
+REACT_HOOKS.md
