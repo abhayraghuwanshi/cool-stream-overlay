@@ -23,9 +23,6 @@ async function sidecarPost(path, data = {}) {
 
 const SettingsModal = ({
     onClose,
-    socialGithub, setSocialGithub,
-    socialTwitter, setSocialTwitter,
-    socialLinkedin, setSocialLinkedin,
     useGPU, setUseGPU
 }) => {
     const [activeTab, setActiveTab] = useState('layout');
@@ -81,9 +78,6 @@ const SettingsModal = ({
                     <div className="flex-1 overflow-y-auto p-6 bg-black/40 custom-scrollbar">
                         {activeTab === 'layout' && (
                             <LayoutTab
-                                socialGithub={socialGithub} setSocialGithub={setSocialGithub}
-                                socialTwitter={socialTwitter} setSocialTwitter={setSocialTwitter}
-                                socialLinkedin={socialLinkedin} setSocialLinkedin={setSocialLinkedin}
                                 useGPU={useGPU} setUseGPU={setUseGPU}
                             />
                         )}
@@ -122,72 +116,9 @@ const ToggleItem = ({ label, description, active, onClick }) => (
     </div>
 );
 
-const LayoutTab = ({ socialGithub, setSocialGithub, socialTwitter, setSocialTwitter, socialLinkedin, setSocialLinkedin, useGPU, setUseGPU }) => {
-    const [localGithub, setLocalGithub] = useState(socialGithub || '');
-    const [localTwitter, setLocalTwitter] = useState(socialTwitter || '');
-    const [localLinkedin, setLocalLinkedin] = useState(socialLinkedin || '');
-
-    useEffect(() => {
-        setLocalGithub(socialGithub || '');
-        setLocalTwitter(socialTwitter || '');
-        setLocalLinkedin(socialLinkedin || '');
-    }, [socialGithub, socialTwitter, socialLinkedin]);
-
-    const handleSaveSocials = () => {
-        if (localGithub !== socialGithub) setSocialGithub(localGithub);
-        if (localTwitter !== socialTwitter) setSocialTwitter(localTwitter);
-        if (localLinkedin !== socialLinkedin) setSocialLinkedin(localLinkedin);
-    };
-
+const LayoutTab = ({ useGPU, setUseGPU }) => {
     return (
         <div className="flex flex-col gap-6 animate-in fade-in slide-in-from-bottom-4 duration-500">
-            <div>
-                <h3 className="text-lg font-semibold text-white mb-1">Social URLs</h3>
-                <p className="text-sm text-white/50 mb-4">Set the text for the social feed ticker.</p>
-
-                <div className="flex flex-col gap-3">
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-white/60 font-medium ml-1">Github URL / Handle</label>
-                        <input
-                            type="text"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/50"
-                            placeholder="/raghu-dev"
-                            value={localGithub}
-                            onChange={(e) => setLocalGithub(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-white/60 font-medium ml-1">Twitter Handle</label>
-                        <input
-                            type="text"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/50"
-                            placeholder="@raghu_codes"
-                            value={localTwitter}
-                            onChange={(e) => setLocalTwitter(e.target.value)}
-                        />
-                    </div>
-
-                    <div className="flex flex-col gap-1">
-                        <label className="text-xs text-white/60 font-medium ml-1">LinkedIn URL</label>
-                        <input
-                            type="text"
-                            className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-2 text-sm text-white placeholder:text-white/30 focus:outline-none focus:border-blue-500/50"
-                            placeholder="/in/raghu"
-                            value={localLinkedin}
-                            onChange={(e) => setLocalLinkedin(e.target.value)}
-                        />
-                    </div>
-
-                    <button
-                        onClick={handleSaveSocials}
-                        className="mt-2 w-full py-2.5 bg-blue-500 hover:bg-blue-600 text-white font-medium rounded-xl text-sm transition-colors shadow-lg shadow-blue-500/20"
-                    >
-                        Save Socials
-                    </button>
-                </div>
-            </div>
-
             <div className="pt-2">
                 <h3 className="text-lg font-semibold text-white mb-1">Hardware Settings</h3>
                 <p className="text-sm text-white/50 mb-4">Toggle CUDA/Metal hardware GPU acceleration. (Requires server restart)</p>

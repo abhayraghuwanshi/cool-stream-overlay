@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bot, Camera, ChevronDown, ChevronUp, Layers, ListChecks, Monitor, Plus, RotateCw, Rss, Video, X } from 'lucide-react';
+import { Bot, Camera, ChevronDown, ChevronUp, Layers, ListChecks, Monitor, Plus, RotateCw, Video, X } from 'lucide-react';
 import { useState } from 'react';
 
 // ── Icons ─────────────────────────────────────────────────────────────────────
@@ -27,23 +27,26 @@ const BUILTIN_LAYERS = [
     { id: 'faceCam',       label: 'Face Cam',     color: '#8b5cf6', Icon: Camera },
     { id: 'handCam',       label: 'Hand Cam',     color: '#a78bfa', Icon: Video },
     { id: 'roomCam',       label: 'Room Cam',     color: '#c4b5fd', Icon: Monitor },
-    { id: 'socialFeed',    label: 'Social Feed',  color: '#0ea5e9', Icon: Rss },
     { id: 'aiCompanion',   label: 'AI Companion', color: '#10b981', Icon: Bot },
     { id: 'currentTask',   label: 'Current Task', color: '#f59e0b', Icon: ListChecks },
 ];
 const BUILTIN_MAP = Object.fromEntries(BUILTIN_LAYERS.map(l => [l.id, l]));
 
+// A clipped solid preview swatch for the polygon shapes.
+const clipSwatch = (clip, color, w = 18, h = 16) => (
+    <span style={{ width: w, height: h, background: color, clipPath: clip, display: 'block' }} />
+);
+
+// `group` controls which Add subsection a type appears under: 'element' (content)
+// or 'shape' (primitives). Defaults to 'element' when omitted.
 const ELEMENT_TYPES = [
     { type: 'text',       label: 'Text',       color: '#ec4899', preview: <span style={{ fontWeight: 900, fontSize: 18, fontFamily: 'serif', lineHeight: 1 }}>T</span> },
     { type: 'lowerthird', label: 'Lower 3rd',  color: '#f97316', preview: (
-        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', width: '100%', padding: '0 4px' }}>
-            <span style={{ height: 3, background: '#f97316', borderRadius: 2, width: '80%' }} />
-            <span style={{ height: 2, background: 'rgba(249,115,22,0.4)', borderRadius: 2, width: '50%' }} />
+        <span style={{ display: 'flex', flexDirection: 'column', gap: 2, alignItems: 'flex-start', width: 28 }}>
+            <span style={{ height: 3, background: '#f97316', borderRadius: 2, width: 24, display: 'block' }} />
+            <span style={{ height: 2, background: 'rgba(249,115,22,0.4)', borderRadius: 2, width: 15, display: 'block' }} />
         </span>
     )},
-    { type: 'shape',      label: 'Rectangle',  color: '#8b5cf6', preview: <span style={{ width: 22, height: 14, border: '2px solid #8b5cf6', borderRadius: 3, display: 'block' }} /> },
-    { type: 'circle',     label: 'Ellipse',    color: '#6366f1', preview: <span style={{ width: 18, height: 18, border: '2px solid #6366f1', borderRadius: '50%', display: 'block' }} /> },
-    { type: 'divider',    label: 'Line',       color: '#6b7280', preview: <span style={{ width: '80%', height: 2, background: '#6b7280', borderRadius: 1, display: 'block' }} /> },
     { type: 'logo',       label: 'Image',      color: '#06b6d4', preview: (
         <span style={{ width: 22, height: 16, border: '1.5px solid #06b6d4', borderRadius: 2, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
             <span style={{ fontSize: 9, color: '#06b6d4' }}>▣</span>
@@ -52,9 +55,71 @@ const ELEMENT_TYPES = [
     { type: 'clock',      label: 'Clock',      color: '#84cc16', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#84cc16', letterSpacing: -0.5 }}>00:00</span> },
     { type: 'countdown',  label: 'Countdown',  color: '#14b8a6', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#14b8a6', letterSpacing: -0.5 }}>05:00</span> },
     { type: 'frame',      label: 'Cam Frame',  color: '#818cf8', preview: <span style={{ width: 20, height: 14, border: '2px solid #818cf8', borderRadius: 3, display: 'block', boxShadow: '0 0 4px #818cf8' }} /> },
+    { type: 'live',       label: 'Live Badge', color: '#ef4444', preview: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#ef4444', boxShadow: '0 0 4px #ef4444', display: 'block' }} />
+            <span style={{ fontSize: 8, fontWeight: 900, color: '#ef4444', letterSpacing: 0.5 }}>LIVE</span>
+        </span>
+    )},
+    { type: 'social',     label: 'Social',     color: '#0ea5e9', preview: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+            <span style={{ fontSize: 13, fontWeight: 900, color: '#0ea5e9', lineHeight: 1 }}>@</span>
+            <span style={{ width: 11, height: 3, background: 'rgba(14,165,233,0.5)', borderRadius: 2, display: 'block' }} />
+        </span>
+    )},
+    { type: 'goal',       label: 'Goal Bar',   color: '#22c55e', preview: (
+        <span style={{ width: 26, height: 5, background: 'rgba(34,197,94,0.2)', borderRadius: 3, overflow: 'hidden', display: 'block' }}>
+            <span style={{ display: 'block', width: '70%', height: '100%', background: '#22c55e', borderRadius: 3 }} />
+        </span>
+    )},
+    { type: 'liquidgoal', label: 'Liquid Goal', color: '#0ea5e9', preview: (
+        <span style={{ width: 13, height: 20, borderRadius: 4, border: '1.5px solid rgba(14,165,233,0.6)', overflow: 'hidden', display: 'block', position: 'relative' }}>
+            <span style={{ position: 'absolute', left: 0, right: 0, bottom: 0, height: '60%', background: '#0ea5e9', display: 'block' }} />
+        </span>
+    )},
+    { type: 'pomodoro',   label: 'Pomodoro',   color: '#f87171', preview: (
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+            <span style={{ fontSize: 10 }}>🍅</span>
+            <span style={{ fontSize: 8, fontFamily: 'monospace', color: '#f87171', letterSpacing: -0.5 }}>25:00</span>
+        </span>
+    )},
+    { type: 'moodring',   label: 'Mood Ring',  color: '#38bdf8', preview: (
+        <span style={{ width: 16, height: 16, borderRadius: '50%', border: '2.5px solid #38bdf8', boxShadow: '0 0 6px #38bdf8, inset 0 0 4px #38bdf8', display: 'block' }} />
+    )},
+    { type: 'pet',        label: 'Channel Pet', color: '#fbbf24', preview: (
+        <span style={{ position: 'relative', width: 16, height: 16, borderRadius: '46%', background: '#fbbf24', display: 'block' }}>
+            <span style={{ position: 'absolute', top: 6, left: 3.5, width: 2.5, height: 2.5, borderRadius: '50%', background: '#3a1a08' }} />
+            <span style={{ position: 'absolute', top: 6, right: 3.5, width: 2.5, height: 2.5, borderRadius: '50%', background: '#3a1a08' }} />
+        </span>
+    )},
+    { type: 'wheel',      label: 'Decision Wheel', color: '#a855f7', preview: (
+        <span style={{ position: 'relative', width: 18, height: 18, borderRadius: '50%', display: 'block', overflow: 'hidden',
+            background: 'conic-gradient(#ef4444 0deg 90deg, #f59e0b 90deg 180deg, #22c55e 180deg 270deg, #0ea5e9 270deg 360deg)',
+            boxShadow: '0 0 4px rgba(168,85,247,0.7)' }}>
+            <span style={{ position: 'absolute', top: '50%', left: '50%', width: 5, height: 5, borderRadius: '50%', background: '#0a0a16', transform: 'translate(-50%,-50%)' }} />
+        </span>
+    )},
+    { type: 'note',       label: 'Sticky Note', color: '#fcd34d', preview: (
+        <span style={{ position: 'relative', width: 16, height: 16, background: '#fde68a', display: 'block', transform: 'rotate(-6deg)', boxShadow: '0 2px 4px rgba(0,0,0,0.4)' }}>
+            <span style={{ position: 'absolute', top: 3, left: 2.5, right: 2.5, height: 1.5, background: 'rgba(58,47,16,0.55)', display: 'block' }} />
+            <span style={{ position: 'absolute', top: 6.5, left: 2.5, right: 5, height: 1.5, background: 'rgba(58,47,16,0.55)', display: 'block' }} />
+            <span style={{ position: 'absolute', right: 0, bottom: 0, width: 0, height: 0, borderStyle: 'solid', borderWidth: '0 0 5px 5px', borderColor: 'transparent transparent rgba(0,0,0,0.18) transparent' }} />
+        </span>
+    )},
+
+    // ── Shapes ──
+    { type: 'shape',    group: 'shape', label: 'Rectangle', color: '#8b5cf6', preview: <span style={{ width: 22, height: 14, border: '2px solid #8b5cf6', borderRadius: 3, display: 'block' }} /> },
+    { type: 'circle',   group: 'shape', label: 'Ellipse',   color: '#6366f1', preview: <span style={{ width: 18, height: 18, border: '2px solid #6366f1', borderRadius: '50%', display: 'block' }} /> },
+    { type: 'divider',  group: 'shape', label: 'Line',      color: '#6b7280', preview: <span style={{ width: 26, height: 2, background: '#6b7280', borderRadius: 1, display: 'block' }} /> },
+    { type: 'triangle', group: 'shape', label: 'Triangle',  color: '#f43f5e', preview: clipSwatch('polygon(50% 0%, 100% 100%, 0% 100%)', '#f43f5e') },
+    { type: 'diamond',  group: 'shape', label: 'Diamond',   color: '#06b6d4', preview: clipSwatch('polygon(50% 0%, 100% 50%, 50% 100%, 0% 50%)', '#06b6d4') },
+    { type: 'hexagon',  group: 'shape', label: 'Hexagon',   color: '#eab308', preview: clipSwatch('polygon(25% 0%, 75% 0%, 100% 50%, 75% 100%, 25% 100%, 0% 50%)', '#eab308', 20) },
+    { type: 'star',     group: 'shape', label: 'Star',      color: '#f59e0b', preview: clipSwatch('polygon(50% 0%, 61% 35%, 98% 35%, 68% 57%, 79% 91%, 50% 70%, 21% 91%, 32% 57%, 2% 35%, 39% 35%)', '#f59e0b') },
 ];
 
 const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]));
+const CONTENT_ELEMENTS = ELEMENT_TYPES.filter(t => t.group !== 'shape');
+const SHAPE_ELEMENTS = ELEMENT_TYPES.filter(t => t.group === 'shape');
 
 const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
 
@@ -186,13 +251,10 @@ const SceneDot = ({ color }) => (
 // current canvas as a new scene, updates a scene to match the canvas, or
 // deletes one. The "Layouts" link opens the gallery to switch which show (layout)
 // is active.
-const ScenesDropdown = ({ layoutName, scenes = [], activeSceneId, onSwitchScene, onSaveScene, onUpdateScene, onDeleteScene, onOpenLayouts }) => {
+const ScenesDropdown = ({ layoutName, scenes = [], activeSceneId, onSwitchScene, onUpdateScene, onDeleteScene, onOpenLayouts }) => {
     const [open, setOpen] = useState(false);
-    const [adding, setAdding] = useState(false);
-    const [name, setName] = useState('');
 
     const active = scenes.find(s => s.id === activeSceneId) ?? null;
-    const commitSave = () => { onSaveScene?.(name); setName(''); setAdding(false); };
 
     return (
         <div style={{ padding: '0 2px' }}>
@@ -243,7 +305,7 @@ const ScenesDropdown = ({ layoutName, scenes = [], activeSceneId, onSwitchScene,
                         }}>
                             {scenes.length === 0 && (
                                 <div style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.3)', padding: '6px 7px', lineHeight: 1.5 }}>
-                                    No scenes here yet — save the current canvas below.
+                                    No scenes here yet — hit Save Scene in the top bar.
                                 </div>
                             )}
                             {scenes.map(s => {
@@ -276,39 +338,6 @@ const ScenesDropdown = ({ layoutName, scenes = [], activeSceneId, onSwitchScene,
                     </motion.div>
                 )}
             </AnimatePresence>
-
-            {/* Save current as scene — always visible (not hidden in the dropdown) */}
-            {adding ? (
-                <div style={{ display: 'flex', gap: 4, marginTop: 4 }}>
-                    <input
-                        autoFocus
-                        value={name}
-                        onChange={e => setName(e.target.value)}
-                        onKeyDown={e => { if (e.key === 'Enter') commitSave(); if (e.key === 'Escape') { setAdding(false); setName(''); } }}
-                        placeholder="Scene name…"
-                        style={{
-                            flex: 1, minWidth: 0, background: '#1a1a2e', border: '1px solid rgba(99,102,241,0.35)',
-                            borderRadius: 6, color: '#fff', fontSize: 9, fontFamily: 'monospace', padding: '5px 7px', outline: 'none',
-                        }}
-                    />
-                    <button onClick={commitSave} style={{ padding: '4px 9px', borderRadius: 6, fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', background: 'rgba(79,70,229,0.5)', border: '1px solid rgba(99,102,241,0.5)', color: '#fff', cursor: 'pointer', flexShrink: 0 }}>Save</button>
-                </div>
-            ) : (
-                <button
-                    onClick={() => setAdding(true)}
-                    title="Save the current canvas as a new scene"
-                    style={{
-                        width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 5, marginTop: 4,
-                        padding: '6px 8px', borderRadius: 7,
-                        background: 'rgba(99,102,241,0.12)', border: '1px dashed rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer',
-                        fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
-                    }}
-                    onMouseEnter={e => e.currentTarget.style.background = 'rgba(99,102,241,0.2)'}
-                    onMouseLeave={e => e.currentTarget.style.background = 'rgba(99,102,241,0.12)'}
-                >
-                    <Plus size={11} /> Save current as scene
-                </button>
-            )}
         </div>
     );
 };
@@ -337,7 +366,6 @@ const LayersPanel = ({
     scenes = [],
     activeSceneId,
     onSwitchScene,
-    onSaveScene,
     onUpdateScene,
     onDeleteScene,
     onOpenLayouts,
@@ -409,29 +437,32 @@ const LayersPanel = ({
                     scenes={scenes}
                     activeSceneId={activeSceneId}
                     onSwitchScene={onSwitchScene}
-                    onSaveScene={onSaveScene}
                     onUpdateScene={onUpdateScene}
                     onDeleteScene={onDeleteScene}
                     onOpenLayouts={onOpenLayouts}
                 />
-                <Divider />
-
-                {/* ── Add ── */}
-                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'flex-end', padding: '2px 6px 4px' }}>
+                {/* ── Add (grouped with the scenes controls) ── */}
+                <div style={{ padding: '0 2px', marginTop: 5 }}>
                     <button
                         onClick={() => setShowAddPanel(v => !v)}
-                        title="Add layer"
+                        title="Add a component, element, or shape to the canvas"
                         style={{
-                            display: 'flex', alignItems: 'center', gap: 3,
-                            background: showAddPanel ? 'rgba(99,102,241,0.22)' : 'transparent',
-                            border: '1px solid rgba(99,102,241,0.3)', color: '#a5b4fc',
-                            borderRadius: 6, fontSize: 8.5, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
-                            padding: '3px 7px', cursor: 'pointer',
+                            width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 6,
+                            padding: '6px 8px', borderRadius: 7,
+                            background: showAddPanel ? 'rgba(99,102,241,0.28)' : 'rgba(99,102,241,0.12)',
+                            border: '1px solid rgba(99,102,241,0.4)', color: '#a5b4fc', cursor: 'pointer',
+                            fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                            transition: 'background 0.12s',
                         }}
+                        onMouseEnter={e => { if (!showAddPanel) e.currentTarget.style.background = 'rgba(99,102,241,0.2)'; }}
+                        onMouseLeave={e => { if (!showAddPanel) e.currentTarget.style.background = 'rgba(99,102,241,0.12)'; }}
                     >
-                        <Plus size={10} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }} /> Add
+                        <Plus size={11} style={{ transform: showAddPanel ? 'rotate(45deg)' : 'none', transition: 'transform 0.15s' }} />
+                        {showAddPanel ? 'Close' : 'Add Layer'}
                     </button>
                 </div>
+
+                {!showAddPanel && <Divider />}
 
                 <AnimatePresence>
                     {showAddPanel && (
@@ -459,15 +490,31 @@ const LayersPanel = ({
                             )}
                             <SectionLabel>Elements — click, then place on canvas</SectionLabel>
                             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '4px 2px 6px' }}>
-                                {ELEMENT_TYPES.map(t => (
+                                {CONTENT_ELEMENTS.map(t => (
+                                    <AddCard
+                                        key={t.type}
+                                        label={t.label}
+                                        color={t.color}
+                                        preview={t.preview}
+                                        // Arm placement (click/drag on canvas) if available,
+                                        // else fall back to instant add.
+                                        onClick={() => {
+                                            if (onPlaceElement) onPlaceElement(t.type);
+                                            else onAddElement(t.type);
+                                            setShowAddPanel(false);
+                                        }}
+                                    />
+                                ))}
+                            </div>
+                            <SectionLabel>Shapes</SectionLabel>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: 5, padding: '4px 2px 6px' }}>
+                                {SHAPE_ELEMENTS.map(t => (
                                     <AddCard
                                         key={t.type}
                                         label={t.label}
                                         color={t.color}
                                         preview={t.preview}
                                         onClick={() => {
-                                            // Arm placement (click/drag on canvas) if available,
-                                            // else fall back to instant add.
                                             if (onPlaceElement) onPlaceElement(t.type);
                                             else onAddElement(t.type);
                                             setShowAddPanel(false);

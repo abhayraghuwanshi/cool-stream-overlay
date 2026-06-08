@@ -5,6 +5,23 @@
   50% { opacity: 0.3; }
 }
 
+/* Sloshing surface for the liquid-fill goal — two SVG waves slide sideways by
+   one full period (-50% of their 2-period width) for a seamless moving surface. */
+@keyframes liquidWave {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
+/* Channel pet idle: a gentle bob and periodic blink. */
+@keyframes petBob {
+  0%, 100% { transform: translateY(0); }
+  50%      { transform: translateY(-7%); }
+}
+@keyframes petBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  96%           { transform: scaleY(0.1); }
+}
+
 @theme {
   --color-obs-bg: rgba(0, 0, 0, 0);
 }

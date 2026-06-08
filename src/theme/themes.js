@@ -90,5 +90,6 @@ export const resolveElement = (element, theme = DEFAULT_THEME) => ({
     fontColor: resolveToken(element.fontColor, theme),
     subFontColor: resolveToken(element.subFontColor, theme),
     bgColor: resolveToken(element.bgColor, theme),
+    fillColor: resolveToken(element.fillColor, theme),
     borderRadius: resolveToken(element.borderRadius, theme),
 });

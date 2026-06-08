@@ -6,12 +6,12 @@
 // device streams are NOT part of a scene — a scene only positions / shows /
 // hides the camera boxes; whatever device is live keeps streaming.
 
-const BUILTIN_BOX_IDS = ['faceCam', 'socialFeed', 'aiCompanion', 'handCam', 'roomCam', 'currentTask'];
+const BUILTIN_BOX_IDS = ['faceCam', 'aiCompanion', 'handCam', 'roomCam', 'currentTask'];
 
 // Visibility helper — start from "all hidden" then turn on what a scene needs.
 const hideAll = {
     faceCam: false, handCam: false, roomCam: false,
-    socialFeed: false, aiCompanion: false, currentTask: false,
+    aiCompanion: false, currentTask: false,
 };
 
 // Text element factory with a stable per-preset id (presets replace elements
@@ -88,10 +88,9 @@ export const SCENE_PRESETS = [
             background: { type: 'gradient', from: '#0c1326', to: '#0a0a0f', dir: '160' },
             boxes: {
                 faceCam: { x: 50, y: 8, w: 46, h: 62 },
-                socialFeed: { x: 4, y: 8, w: 24, h: 22 },
                 currentTask: { x: 0, y: 88, w: 100, h: 12 },
             },
-            boxVisibility: { ...hideAll, faceCam: true, socialFeed: true, currentTask: true },
+            boxVisibility: { ...hideAll, faceCam: true, currentTask: true },
             elements: [
                 {
                     ...text('jc-name', 'Your Name', { x: 50, y: 64, w: 46, h: 9 },
@@ -145,10 +144,23 @@ export const SCENE_PRESETS = [
         accent: '#ec4899',
         snapshot: {
             background: { type: 'gradient', from: '#2a0820', to: '#0a0a0f', dir: '135' },
-            boxes: { socialFeed: { x: 35, y: 60, w: 30, h: 22 } },
-            boxVisibility: { ...hideAll, socialFeed: true },
+            boxVisibility: { ...hideAll },
             elements: [
                 text('end-title', 'THANKS FOR WATCHING', { x: 12, y: 34, w: 76, h: 14 }, { fontSize: 46 }),
+                {
+                    id: 'preset_end-twitch', type: 'social', hidden: false,
+                    platform: 'twitch', content: '@yourhandle',
+                    fontSize: 18, fontColor: '#ffffff', bold: true, align: 'center',
+                    bgColor: '#000000', bgOpacity: 0.5, borderRadius: 99, opacity: 1,
+                    box: { x: 30, y: 56, w: 40, h: 8 },
+                },
+                {
+                    id: 'preset_end-youtube', type: 'social', hidden: false,
+                    platform: 'youtube', content: '@yourchannel',
+                    fontSize: 18, fontColor: '#ffffff', bold: true, align: 'center',
+                    bgColor: '#000000', bgOpacity: 0.5, borderRadius: 99, opacity: 1,
+                    box: { x: 30, y: 66, w: 40, h: 8 },
+                },
             ],
             zOrder: BUILTIN_BOX_IDS,
         },

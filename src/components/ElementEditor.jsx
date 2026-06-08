@@ -1,6 +1,17 @@
 import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 import { hexToRgba } from './ElementRenderer';
+import { MOODS } from '../theme/moods';
+
+// Quick sticky-note swatches — each pairs a paper colour with readable dark ink.
+const NOTE_PAPERS = [
+    { label: 'Yellow', paper: '#fde68a', ink: '#3a2f10' },
+    { label: 'Pink',   paper: '#fbcfe8', ink: '#4a1233' },
+    { label: 'Mint',   paper: '#bbf7d0', ink: '#0f3d27' },
+    { label: 'Blue',   paper: '#bfdbfe', ink: '#15315e' },
+    { label: 'Orange', paper: '#fed7aa', ink: '#5a2c08' },
+    { label: 'Lilac',  paper: '#e9d5ff', ink: '#3b1466' },
+];
 
 // ── Small reusable controls ────────────────────────────────────────────────
 
@@ -26,6 +37,30 @@ const TextInput = ({ value, onChange, placeholder, style = {} }) => (
             fontFamily: 'inter, system-ui',
             width: '100%',
             boxSizing: 'border-box',
+            ...style,
+        }}
+    />
+);
+
+const TextArea = ({ value, onChange, placeholder, rows = 4, style = {} }) => (
+    <textarea
+        value={value || ''}
+        onChange={e => onChange(e.target.value)}
+        placeholder={placeholder}
+        rows={rows}
+        style={{
+            background: 'rgba(255,255,255,0.06)',
+            border: '1px solid rgba(255,255,255,0.1)',
+            borderRadius: 5,
+            color: '#fff',
+            fontSize: 11,
+            padding: '6px 8px',
+            outline: 'none',
+            fontFamily: 'inter, system-ui',
+            width: '100%',
+            boxSizing: 'border-box',
+            resize: 'vertical',
+            lineHeight: 1.4,
             ...style,
         }}
     />
@@ -157,8 +192,10 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
 
     const set = (key, val) => onChange({ [key]: val });
     const { type } = element;
-    const isText = ['text', 'lowerthird', 'clock', 'countdown'].includes(type);
-    const isAutoText = type === 'clock' || type === 'countdown'; // auto-generated content, no free text input
+    const isClipShape = ['triangle', 'diamond', 'hexagon', 'star'].includes(type);
+    const isMoodEl = ['moodring', 'pet'].includes(type);
+    const isText = ['text', 'lowerthird', 'clock', 'countdown', 'live', 'social', 'pomodoro'].includes(type);
+    const isAutoText = ['clock', 'countdown', 'pomodoro'].includes(type); // auto-generated content, no free text input
 
     const handleLogoUpload = (e) => {
         const file = e.target.files?.[0];
@@ -226,6 +263,200 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                     />
                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec</span>
                 </Group>
+            )}
+
+            {/* ── LIVE badge: dot colour + pulse ── */}
+            {type === 'live' && (
+                <Group label="Dot">
+                    <ColorInput value={element.dotColor || '#ef4444'} onChange={v => set('dotColor', v)} />
+                    <ToggleBtn active={element.pulse !== false} onClick={() => set('pulse', !(element.pulse !== false))} title="Pulse animation">Pulse</ToggleBtn>
+                </Group>
+            )}
+
+            {/* ── Social chip: platform ── */}
+            {type === 'social' && (
+                <Group label="Platform">
+                    <SelectInput
+                        value={element.platform || 'twitch'}
+                        onChange={v => set('platform', v)}
+                        options={[
+                            { value: 'twitch',    label: 'Twitch'      },
+                            { value: 'youtube',   label: 'YouTube'     },
+                            { value: 'x',         label: 'X / Twitter' },
+                            { value: 'instagram', label: 'Instagram'   },
+                            { value: 'discord',   label: 'Discord'     },
+                            { value: 'tiktok',    label: 'TikTok'      },
+                            { value: 'kick',      label: 'Kick'        },
+                            { value: 'web',       label: 'Website'     },
+                        ]}
+                    />
+                </Group>
+            )}
+
+            {/* ── Mood-ring: pick mood + auto-cycle ── */}
+            {type === 'moodring' && (
+                <>
+                    <Group label="Mood">
+                        {MOODS.map(m => (
+                            <ToggleBtn
+                                key={m.id}
+                                active={!element.auto && (element.mood ?? 'chill') === m.id}
+                                onClick={() => set('mood', m.id)}
+                                title={m.label}
+                            >
+                                <span style={{ marginRight: 3 }}>{m.emoji}</span>{m.label}
+                            </ToggleBtn>
+                        ))}
+                    </Group>
+                    <Group label="Auto-cycle">
+                        <ToggleBtn active={!!element.auto} onClick={() => set('auto', !element.auto)} title="Cycle moods automatically">
+                            {element.auto ? 'On' : 'Off'}
+                        </ToggleBtn>
+                        {element.auto && (
+                            <>
+                                <NumberInput value={element.cycleSec ?? 20} onChange={v => set('cycleSec', Math.max(3, v))} min={3} max={600} style={{ width: 56 }} />
+                                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec each</span>
+                            </>
+                        )}
+                    </Group>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Any Pet you place mirrors this mood.
+                    </div>
+                    <Divider />
+                </>
+            )}
+
+            {/* ── Pet: follows the mood-ring ── */}
+            {type === 'pet' && (
+                <>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        The pet's expression follows the Mood-ring. Add a Mood-ring element to control it; otherwise it stays chill. Resize via the box on canvas.
+                    </div>
+                    <Divider />
+                </>
+            )}
+
+            {/* ── Decision wheel: options + spin behaviour ── */}
+            {type === 'wheel' && (
+                <>
+                    <Group label="Options">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: '100%' }}>
+                            {(element.options ?? []).map((opt, i) => (
+                                <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 5 }}>
+                                    <TextInput
+                                        value={opt}
+                                        onChange={v => { const next = [...(element.options ?? [])]; next[i] = v; set('options', next); }}
+                                        placeholder={`Option ${i + 1}`}
+                                        style={{ width: 130 }}
+                                    />
+                                    <button
+                                        onClick={() => set('options', (element.options ?? []).filter((_, j) => j !== i))}
+                                        disabled={(element.options ?? []).length <= 2}
+                                        title="Remove"
+                                        style={{ background: 'none', border: '1px solid rgba(255,100,100,0.3)', borderRadius: 5, color: 'rgba(255,100,100,0.7)', fontSize: 11, padding: '3px 6px', display: 'flex', alignItems: 'center', cursor: (element.options ?? []).length <= 2 ? 'not-allowed' : 'pointer', opacity: (element.options ?? []).length <= 2 ? 0.4 : 1 }}
+                                    >
+                                        <X size={12} />
+                                    </button>
+                                </div>
+                            ))}
+                            <button
+                                onClick={() => set('options', [...(element.options ?? []), `Option ${(element.options ?? []).length + 1}`])}
+                                disabled={(element.options ?? []).length >= 8}
+                                style={{ alignSelf: 'flex-start', background: 'rgba(99,102,241,0.15)', border: '1px solid rgba(99,102,241,0.3)', borderRadius: 5, color: '#a5b4fc', fontSize: 11, padding: '4px 10px', fontFamily: 'inter, system-ui', cursor: (element.options ?? []).length >= 8 ? 'not-allowed' : 'pointer', opacity: (element.options ?? []).length >= 8 ? 0.4 : 1 }}
+                            >
+                                + Add option
+                            </button>
+                        </div>
+                    </Group>
+                    <Group label="Spin time">
+                        <NumberInput value={element.spinSec ?? 4} onChange={v => set('spinSec', Math.max(1, Math.min(15, v)))} min={1} max={15} style={{ width: 52 }} />
+                        <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec</span>
+                    </Group>
+                    <ColorInput value={element.fontColor} onChange={v => set('fontColor', v)} label="Label color" />
+                    <Group label="Auto-spin">
+                        <ToggleBtn active={!!element.auto} onClick={() => set('auto', !element.auto)} title="Spin automatically">
+                            {element.auto ? 'On' : 'Off'}
+                        </ToggleBtn>
+                        {element.auto && (
+                            <>
+                                <NumberInput value={element.cycleSec ?? 30} onChange={v => set('cycleSec', Math.max(5, v))} min={5} max={600} style={{ width: 56 }} />
+                                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec each</span>
+                            </>
+                        )}
+                    </Group>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Click the wheel's centre to spin. 2–8 options.
+                    </div>
+                    <Divider />
+                </>
+            )}
+
+            {/* ── Sticky note: text + paper ── */}
+            {type === 'note' && (
+                <>
+                    <div style={{ width: '100%' }}>
+                        <Label>Note</Label>
+                        <TextArea value={element.content} onChange={v => set('content', v)} placeholder="Type your note…" rows={5} />
+                    </div>
+                    <Group label="Text size">
+                        <NumberInput value={element.fontSize ?? 16} onChange={v => set('fontSize', Math.max(8, Math.min(48, v)))} min={8} max={48} style={{ width: 52 }} />
+                        <ToggleBtn active={!!element.bold} onClick={() => set('bold', !element.bold)} title="Bold">B</ToggleBtn>
+                    </Group>
+                    <div style={{ width: '100%' }}>
+                        <Label>Paper</Label>
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, alignItems: 'center' }}>
+                            {NOTE_PAPERS.map(p => {
+                                const active = (element.paperColor || '#fde68a').toLowerCase() === p.paper;
+                                return (
+                                    <button key={p.paper} onClick={() => onChange({ paperColor: p.paper, fontColor: p.ink })} title={p.label}
+                                        style={{ width: 22, height: 22, borderRadius: 5, background: p.paper, cursor: 'pointer',
+                                            border: active ? '2px solid #fff' : '2px solid rgba(255,255,255,0.2)',
+                                            boxShadow: active ? '0 0 6px rgba(255,255,255,0.5)' : 'none', flexShrink: 0 }} />
+                                );
+                            })}
+                            <ColorInput value={element.paperColor || '#fde68a'} onChange={v => set('paperColor', v)} />
+                        </div>
+                    </div>
+                    <ColorInput value={element.fontColor || '#3a2f10'} onChange={v => set('fontColor', v)} label="Ink (text)" />
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 120 }}>
+                        <Slider label="Tilt" value={element.tilt ?? -3} onChange={v => set('tilt', v)} min={-12} max={12} step={1} displayValue={`${element.tilt ?? -3}°`} />
+                    </div>
+                    <Divider />
+                </>
+            )}
+
+            {/* ── Pomodoro: work / break minutes ── */}
+            {type === 'pomodoro' && (
+                <Group label="Intervals">
+                    <NumberInput value={element.workMin ?? 25} onChange={v => set('workMin', Math.max(1, v))} min={1} max={180} style={{ width: 52 }} />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>focus</span>
+                    <NumberInput value={element.breakMin ?? 5} onChange={v => set('breakMin', Math.max(1, v))} min={1} max={60} style={{ width: 52 }} />
+                    <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>break</span>
+                </Group>
+            )}
+
+            {/* ── Goal bar / liquid goal: label, progress, fill colour ── */}
+            {(type === 'goal' || type === 'liquidgoal') && (
+                <>
+                    <Group label="Label">
+                        <TextInput value={element.content} onChange={v => set('content', v)} placeholder="Goal label" style={{ width: 150 }} />
+                    </Group>
+                    <Group label="Progress">
+                        <NumberInput value={element.current} onChange={v => set('current', Math.max(0, v))} min={0} max={1000000} style={{ width: 64 }} />
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>/</span>
+                        <NumberInput value={element.target} onChange={v => set('target', Math.max(1, v))} min={1} max={1000000} style={{ width: 64 }} />
+                    </Group>
+                    <Group label="Text size">
+                        <NumberInput value={element.fontSize} onChange={v => set('fontSize', v)} min={8} max={48} />
+                    </Group>
+                    <ColorInput value={element.fontColor} onChange={v => set('fontColor', v)} label="Text color" />
+                    <ColorInput
+                        value={typeof element.fillColor === 'string' && element.fillColor.startsWith('@') ? '#6366f1' : element.fillColor}
+                        onChange={v => set('fillColor', v)}
+                        label="Bar color"
+                    />
+                    <Divider />
+                </>
             )}
 
             {/* Lower third sub-text */}
@@ -351,7 +582,7 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
             )}
 
             {/* ── Background ── */}
-            {type !== 'divider' && type !== 'frame' && (
+            {type !== 'divider' && type !== 'frame' && type !== 'wheel' && type !== 'note' && !isClipShape && !isMoodEl && (
                 <>
                     <ColorInput value={element.bgColor} onChange={v => set('bgColor', v)} label="BG Color" />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>
@@ -365,8 +596,8 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                 </>
             )}
 
-            {/* ── Divider / shape color ── */}
-            {(type === 'divider' || type === 'shape') && (
+            {/* ── Divider / shape / clip-shape color ── */}
+            {(type === 'divider' || type === 'shape' || isClipShape) && (
                 <>
                     <ColorInput value={element.bgColor} onChange={v => set('bgColor', v)} label="Color" />
                     <div style={{ display: 'flex', flexDirection: 'column', gap: 2, minWidth: 110 }}>
@@ -377,7 +608,7 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
             )}
 
             {/* ── Shared: border radius + element opacity ── */}
-            {type !== 'divider' && (
+            {type !== 'divider' && type !== 'wheel' && type !== 'note' && !isClipShape && !isMoodEl && (
                 <Group label="Radius">
                     <NumberInput value={element.borderRadius} onChange={v => set('borderRadius', v)} min={0} max={100} style={{ width: 52 }} />
                 </Group>

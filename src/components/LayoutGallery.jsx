@@ -10,7 +10,7 @@ import { bgToStyle } from './BackgroundPanel';
 
 const BOX_COLORS = {
     faceCam: '#8b5cf6', handCam: '#a78bfa', roomCam: '#c4b5fd',
-    socialFeed: '#0ea5e9', aiCompanion: '#10b981', currentTask: '#f59e0b',
+    aiCompanion: '#10b981', currentTask: '#f59e0b',
 };
 
 const Thumb = ({ snapshot = {} }) => {

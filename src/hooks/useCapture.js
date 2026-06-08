@@ -38,13 +38,29 @@ const useCapture = () => {
     }, []);
 
     useEffect(() => {
-        // On Windows, enumerateDevices returns empty deviceIds until permission is granted.
-        // Request access briefly upfront so subsequent enumerations return real IDs/labels.
-        navigator.mediaDevices
-            .getUserMedia({ video: true })
-            .then(s => s.getTracks().forEach(t => t.stop()))
-            .catch(() => {})
-            .finally(() => enumerateDevices());
+        // Populate the device list on mount WITHOUT acquiring the webcam every
+        // reload. Once camera permission is granted, enumerateDevices() returns
+        // real labels/IDs on its own — no getUserMedia needed. Acquiring the
+        // camera on every load spins the webcam up (stalling the tab on Windows)
+        // and makes the live/OBS source grab the camera needlessly.
+        let cancelled = false;
+        (async () => {
+            try {
+                const perm = await navigator.permissions?.query?.({ name: 'camera' });
+                if (perm?.state === 'granted') {
+                    if (!cancelled) enumerateDevices();
+                    return;
+                }
+            } catch { /* Permissions API unavailable — fall through */ }
+            // Permission not yet granted: request once so the list can populate.
+            // After it's granted, future reloads take the fast path above.
+            navigator.mediaDevices
+                .getUserMedia({ video: true })
+                .then(s => s.getTracks().forEach(t => t.stop()))
+                .catch(() => {})
+                .finally(() => { if (!cancelled) enumerateDevices(); });
+        })();
+        return () => { cancelled = true; };
     }, [enumerateDevices]);
 
     // ── Helpers ───────────────────────────────────────────────────────────────

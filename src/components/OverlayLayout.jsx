@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronUp, Circle, Film, LayoutGrid, RotateCcw } from 'lucide-react';
+import { Check, ChevronUp, Circle, Film, LayoutGrid, RotateCcw, Save } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { layoutUrl } from '../config.js';
 import { useOBS } from '../context/OBSContext';
@@ -12,17 +12,16 @@ import DraggableBox from './DraggableBox';
 import ElementEditor from './ElementEditor';
 import ElementRenderer, { defaultElement } from './ElementRenderer';
 import LayersPanel from './LayersPanel';
-import SocialFeed from './SocialFeed';
 import ThemePanel from './ThemePanel';
 import VideoFeed from './VideoFeed';
 import CameraFrame, { DEFAULT_CAM_STYLE } from './CameraFrame';
 import LayoutGallery from './LayoutGallery';
 import { DEFAULT_THEME, getTheme } from '../theme/themes';
+import { MOODS } from '../theme/moods';
 import { packSnapshot } from '../scenes/packs';
 
 const DEFAULT_BOXES = {
     faceCam: { x: 80, y: 0, w: 20, h: 20 },
-    socialFeed: { x: 80, y: 20, w: 20, h: 18 },
     aiCompanion: { x: 80, y: 38, w: 20, h: 37 },
     handCam: { x: 80, y: 75, w: 10, h: 10 },
     roomCam: { x: 90, y: 75, w: 10, h: 10 },
@@ -35,7 +34,7 @@ const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 
 const ElementBox = memo(
     ({
-        element, zIndex, selected, editMode, canvasRef, extraStyle, theme,
+        element, zIndex, selected, editMode, canvasRef, extraStyle, theme, mood,
         onSelect, onBoxChange, onUploadLogo,
     }) => {
         const handleUploadLogo = useCallback(() => onUploadLogo(element.id), [element.id, onUploadLogo]);
@@ -53,7 +52,7 @@ const ElementBox = memo(
                 canvasRef={canvasRef}
                 extraStyle={extraStyle}
             >
-                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} theme={theme} />
+                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} theme={theme} mood={mood} />
             </DraggableBox>
         );
     },
@@ -65,6 +64,7 @@ const ElementBox = memo(
         prev.canvasRef === next.canvasRef &&
         prev.extraStyle === next.extraStyle &&
         prev.theme === next.theme &&
+        prev.mood === next.mood &&
         prev.onSelect === next.onSelect &&
         prev.onBoxChange === next.onBoxChange &&
         prev.onUploadLogo === next.onUploadLogo
@@ -78,13 +78,24 @@ const DEFAULT_VISIBILITY = {
     faceCam: false,
     handCam: false,
     roomCam: false,
-    socialFeed: false,
     aiCompanion: false,
     currentTask: false,
 };
 
 // Per-session ID to suppress WS echoes of our own updates.
 const SESSION_ID = Math.random().toString(36).slice(2);
+
+// Clean / "OBS" mode: when the overlay is loaded as an OBS browser source, add
+// ?obs (or ?clean) to the URL to suppress all on-screen controls (the live dock)
+// so only the overlay itself is captured. Read once at module load.
+const CLEAN_MODE = (() => {
+    try {
+        const p = new URLSearchParams(window.location.search);
+        return p.has('obs') || p.has('clean');
+    } catch {
+        return false;
+    }
+})();
 
 const OverlayLayout = () => {
     const { isRecording, isConnected } = useOBS();
@@ -100,9 +111,6 @@ const OverlayLayout = () => {
         showHandCam: true,
         showRoomCam: true,
         boxVisibility: DEFAULT_VISIBILITY,
-        socialGithub: '/abhayraghuwanshi',
-        socialTwitter: '@ab_nhi_hai',
-        socialLinkedin: '/in/abhayraghuwanshi',
         useGPU: true,
         tasks: [{ id: 1, text: 'Refactoring Overlay', status: 'active' }],
         elements: [],
@@ -226,12 +234,9 @@ const OverlayLayout = () => {
         const nZ     = snapshot.zOrder ?? Object.keys(DEFAULT_BOXES);
         // A scene may carry a theme (theme packs do); otherwise keep the current one.
         const nTheme = snapshot.theme ? getTheme(snapshot.theme) : undefined;
-        // Saved layouts (not scenes) additionally carry camera frames + socials.
+        // Saved layouts (not scenes) additionally carry camera frames.
         const extra = {};
         if (snapshot.camStyles !== undefined) extra.camStyles = snapshot.camStyles;
-        if (snapshot.socialGithub !== undefined) extra.socialGithub = snapshot.socialGithub;
-        if (snapshot.socialTwitter !== undefined) extra.socialTwitter = snapshot.socialTwitter;
-        if (snapshot.socialLinkedin !== undefined) extra.socialLinkedin = snapshot.socialLinkedin;
 
         boxesRef.current = nBoxes;
         setBoxes(nBoxes);
@@ -278,9 +283,6 @@ const OverlayLayout = () => {
         zOrder,
         theme: layoutSettings.theme ?? DEFAULT_THEME,
         camStyles: layoutSettings.camStyles ?? {},
-        socialGithub: layoutSettings.socialGithub ?? '',
-        socialTwitter: layoutSettings.socialTwitter ?? '',
-        socialLinkedin: layoutSettings.socialLinkedin ?? '',
     }), [zOrder, layoutSettings]);
 
     const layouts = layoutSettings.layouts ?? [];
@@ -681,7 +683,6 @@ const OverlayLayout = () => {
     // ── Derived state ────────────────────────────────────────────────────────
     const {
         showFaceCam, showHandCam, showRoomCam,
-        socialGithub, socialTwitter, socialLinkedin,
         useGPU, tasks = [], elements = [],
         background, boxVisibility = DEFAULT_VISIBILITY,
         theme = DEFAULT_THEME,
@@ -692,6 +693,20 @@ const OverlayLayout = () => {
     const rightPanelOpen = !!selectedElement || !!selectedCamera;
 
     const shouldRenderBox = (id) => getBoxVisible(id);
+
+    // ── Live mood ── one source of truth the mood-ring and the pet both read.
+    // The ring element holds the manual mood + auto-cycle settings; when auto is
+    // on we advance through MOODS on a timer. Pets placed anywhere mirror it.
+    const moodRingEl = elements.find(e => e.type === 'moodring' && !e.hidden);
+    const moodAuto = !!moodRingEl?.auto;
+    const moodCycleSec = Math.max(3, moodRingEl?.cycleSec ?? 20);
+    const [moodTick, setMoodTick] = useState(0);
+    useEffect(() => {
+        if (!moodAuto) return;
+        const id = setInterval(() => setMoodTick(t => t + 1), moodCycleSec * 1000);
+        return () => clearInterval(id);
+    }, [moodAuto, moodCycleSec]);
+    const currentMood = moodAuto ? MOODS[moodTick % MOODS.length].id : (moodRingEl?.mood ?? 'chill');
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
@@ -710,11 +725,6 @@ const OverlayLayout = () => {
     const faceCamChild = useMemo(() => framedCam('faceCam', streams.faceCam, 'CAM 01'), [streams.faceCam, camStyles.faceCam, theme.accent, theme.accent2]);
     const handCamChild = useMemo(() => framedCam('handCam', streams.handCam, 'HAND'), [streams.handCam, camStyles.handCam, theme.accent, theme.accent2]);
     const roomCamChild = useMemo(() => framedCam('roomCam', streams.roomCam, 'ROOM'), [streams.roomCam, camStyles.roomCam, theme.accent, theme.accent2]);
-    const socialFeedChild = useMemo(() => (
-        <div className="w-full h-full overflow-hidden">
-            <SocialFeed github={socialGithub} twitter={socialTwitter} linkedin={socialLinkedin} />
-        </div>
-    ), [socialGithub, socialTwitter, socialLinkedin]);
     const aiCompanionChild = useMemo(() => (
         <div className="w-full h-full overflow-hidden"><AICompanion /></div>
     ), []);
@@ -776,7 +786,7 @@ const OverlayLayout = () => {
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <HdrBtn onClick={() => setShowGallery(true)}><LayoutGrid size={12} style={{ marginRight: 4 }} />Layouts</HdrBtn>
+                        <HdrBtn onClick={() => saveScene()}><Save size={12} style={{ marginRight: 4 }} />Save Scene</HdrBtn>
                         <HdrBtn onClick={resetLayout}><RotateCcw size={12} style={{ marginRight: 4 }} />Reset</HdrBtn>
                         <HdrSep />
                         <button
@@ -938,12 +948,12 @@ const OverlayLayout = () => {
                                 editMode={editMode}
                                 canvasRef={canvasRef}
                                 theme={theme}
+                                mood={currentMood}
                             />
                         );
                     })}
 
                     {shouldRenderBox('faceCam') && <DraggableBox id="faceCam" title="Face Cam" box={boxes.faceCam} zIndex={getZIndex('faceCam')} selected={selectedBox === 'faceCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{faceCamChild}</DraggableBox>}
-                    {shouldRenderBox('socialFeed') && <DraggableBox id="socialFeed" title="Social Feed" box={boxes.socialFeed} zIndex={getZIndex('socialFeed')} selected={selectedBox === 'socialFeed'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{socialFeedChild}</DraggableBox>}
                     {shouldRenderBox('aiCompanion') && <DraggableBox id="aiCompanion" title="AI Companion" box={boxes.aiCompanion} zIndex={getZIndex('aiCompanion')} selected={selectedBox === 'aiCompanion'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{aiCompanionChild}</DraggableBox>}
                     {shouldRenderBox('handCam') && <DraggableBox id="handCam" title="Hand Cam" box={boxes.handCam} zIndex={getZIndex('handCam')} selected={selectedBox === 'handCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{handCamChild}</DraggableBox>}
                     {shouldRenderBox('roomCam') && <DraggableBox id="roomCam" title="Room Cam" box={boxes.roomCam} zIndex={getZIndex('roomCam')} selected={selectedBox === 'roomCam'} onSelect={selectBox} onLayerUp={layerUp} onLayerDown={layerDown} onBoxChange={updateBox} editMode={editMode} canvasRef={canvasRef}>{roomCamChild}</DraggableBox>}
@@ -973,8 +983,8 @@ const OverlayLayout = () => {
                 </div>
             </div>
 
-            {/* ── LIVE MODE DOCK — minimal pill, hidden when OBS is recording ── */}
-            {!editMode && !isRecording && (
+            {/* ── LIVE MODE DOCK — minimal pill; hidden while recording or in ?obs clean mode ── */}
+            {!editMode && !isRecording && !CLEAN_MODE && (
                 <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
                         {/* Scene switcher — change scene without entering edit mode */}
