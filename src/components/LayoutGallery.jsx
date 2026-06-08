@@ -2,6 +2,7 @@ import { motion } from 'framer-motion';
 import { Check, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { bgToStyle } from './BackgroundPanel';
+import { starterPreview } from '../scenes/starterLayouts';
 
 // Layouts gallery — each card is a LAYOUT (a "show": a named container of
 // scenes). Switching a layout makes it active and loads its active scene.
@@ -132,7 +133,32 @@ const LayoutCard = ({ layout, active, onSwitch, onRename, onDelete }) => {
     );
 };
 
-const LayoutGallery = ({ layouts = [], activeLayoutId, onClose, onCreate, onSwitch, onRename, onDelete }) => {
+// A starter is a ready-made template (not yet a saved layout). Adding it builds
+// a real, editable layout from its scenes.
+const StarterCard = ({ starter, onAdd }) => (
+    <div style={{
+        display: 'flex', flexDirection: 'column', gap: 7, padding: 8, borderRadius: 10,
+        background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+    }}>
+        <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => onAdd(starter)} title="Add this starter layout">
+            <Thumb snapshot={starterPreview(starter)} />
+            <span style={{ position: 'absolute', top: 5, left: 5, background: 'rgba(16,185,129,0.85)', borderRadius: 5, padding: '2px 6px', fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: '#fff' }}>
+                Starter
+            </span>
+        </div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
+            <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {starter.name}
+            </span>
+            <span style={{ fontSize: 8.5, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                {starter.scenes.length} {starter.scenes.length === 1 ? 'scene' : 'scenes'} · {starter.tagline}
+            </span>
+        </div>
+        <GalleryBtn onClick={() => onAdd(starter)} title="Create a layout from this starter"><Plus size={11} /> Add</GalleryBtn>
+    </div>
+);
+
+const LayoutGallery = ({ layouts = [], activeLayoutId, starters = [], onAddStarter, onClose, onCreate, onSwitch, onRename, onDelete }) => {
     const [newName, setNewName] = useState('');
 
     const create = () => { onCreate(newName); setNewName(''); };
@@ -202,10 +228,30 @@ const LayoutGallery = ({ layouts = [], activeLayoutId, onClose, onCreate, onSwit
 
                 {/* Grid */}
                 <div style={{ overflowY: 'auto', padding: 16 }}>
+                    {/* Starter layouts — ready-made shows. Clicking Add builds a real, editable layout. */}
+                    {starters.length > 0 && onAddStarter && (
+                        <div style={{ marginBottom: 18 }}>
+                            <div style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1.5, color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
+                                Start from a template
+                            </div>
+                            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>
+                                {starters.map(s => (
+                                    <StarterCard key={s.id} starter={s} onAdd={onAddStarter} />
+                                ))}
+                            </div>
+                            <div style={{ height: 1, background: 'rgba(255,255,255,0.06)', margin: '18px 0 0' }} />
+                        </div>
+                    )}
+
+                    {starters.length > 0 && onAddStarter && layouts.length > 0 && (
+                        <div style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1.5, color: 'rgba(255,255,255,0.4)', marginBottom: 10 }}>
+                            Your layouts
+                        </div>
+                    )}
                     {layouts.length === 0 ? (
                         <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.3)', fontSize: 12, fontFamily: 'monospace', lineHeight: 1.7, padding: '40px 20px' }}>
-                            No layouts yet.<br />
-                            Name one above and hit <span style={{ color: '#a5b4fc' }}>New layout</span> — it captures the current canvas as its first scene.
+                            No saved layouts yet.<br />
+                            Add a <span style={{ color: '#6ee7b7' }}>starter</span> above, or name one and hit <span style={{ color: '#a5b4fc' }}>New layout</span> to capture the current canvas.
                         </div>
                     ) : (
                         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(210px, 1fr))', gap: 12 }}>

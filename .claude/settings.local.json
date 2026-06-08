@@ -5,7 +5,8 @@
       "Bash(npm install *)",
       "WebSearch",
       "Bash(git commit -m 'Add countdown element + theme-token system *)",
-      "PowerShell(npm run *)"
+      "PowerShell(npm run *)",
+      "Bash(npx vite *)"
     ]
   }
 }

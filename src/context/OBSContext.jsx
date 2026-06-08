@@ -15,7 +15,24 @@ export const OBSProvider = ({ children }) => {
     const mountedRef = useRef(true);
 
     useEffect(() => {
+        mountedRef.current = true;
+        // Guard against overlapping connect attempts. A single failed connection
+        // both rejects connect() AND emits ConnectionClosed; without these guards
+        // each failure would schedule TWO retries, doubling every interval into a
+        // storm of dead WebSockets (ERR_INSUFFICIENT_RESOURCES + memory growth).
+        let connecting = false;
+
+        // Only ever one pending retry: clearing first means duplicate callers
+        // (catch + ConnectionClosed) collapse to a single scheduled attempt.
+        const scheduleRetry = () => {
+            if (!mountedRef.current) return;
+            clearTimeout(retryRef.current);
+            retryRef.current = setTimeout(connect, RETRY_INTERVAL);
+        };
+
         const connect = async () => {
+            if (!mountedRef.current || connecting) return;
+            connecting = true;
             try {
                 await obs.connect('ws://localhost:4455', '');
                 if (!mountedRef.current) return;
@@ -27,7 +44,9 @@ export const OBSProvider = ({ children }) => {
                 // OBS is likely not open — retry silently
                 if (!mountedRef.current) return;
                 setIsConnected(false);
-                retryRef.current = setTimeout(connect, RETRY_INTERVAL);
+                scheduleRetry();
+            } finally {
+                connecting = false;
             }
         };
 
@@ -39,7 +58,7 @@ export const OBSProvider = ({ children }) => {
             if (!mountedRef.current) return;
             setIsConnected(false);
             setIsRecording(false);
-            retryRef.current = setTimeout(connect, RETRY_INTERVAL);
+            scheduleRetry();
         });
 
         connect();

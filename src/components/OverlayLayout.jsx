@@ -3,7 +3,6 @@ import { Check, ChevronUp, Circle, Film, LayoutGrid, RotateCcw, Save } from 'luc
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { layoutUrl } from '../config.js';
 import { useOBS } from '../context/OBSContext';
-import useCapture from '../hooks/useCapture';
 import AICompanion from './AICompanion';
 import BackgroundPanel, { bgToStyle } from './BackgroundPanel';
 import CameraEditor from './CameraEditor';
@@ -13,12 +12,12 @@ import ElementEditor from './ElementEditor';
 import ElementRenderer, { defaultElement } from './ElementRenderer';
 import LayersPanel from './LayersPanel';
 import ThemePanel from './ThemePanel';
-import VideoFeed from './VideoFeed';
 import CameraFrame, { DEFAULT_CAM_STYLE } from './CameraFrame';
 import LayoutGallery from './LayoutGallery';
 import { DEFAULT_THEME, getTheme } from '../theme/themes';
 import { MOODS } from '../theme/moods';
 import { packSnapshot } from '../scenes/packs';
+import { STARTER_LAYOUTS, buildStarterLayout } from '../scenes/starterLayouts';
 
 const DEFAULT_BOXES = {
     faceCam: { x: 80, y: 0, w: 20, h: 20 },
@@ -139,8 +138,11 @@ const OverlayLayout = () => {
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
 
-    const capture = useCapture();
-    const { streams } = capture;
+    // Cameras are NOT captured in the browser — the real webcam is a native OBS
+    // "Video Capture Device" source. The overlay only renders a styled FRAME
+    // placeholder (pure CSS, so it composites into OBS) that you position over
+    // the OBS camera source. No getUserMedia → no permission prompt, no webcam
+    // spin-up, no video-decode memory growth.
 
     // ── OBS recording — close edit panels ───────────────────────────────────────
     useEffect(() => {
@@ -225,7 +227,6 @@ const OverlayLayout = () => {
     // ── Scenes ───────────────────────────────────────────────────────────────
     // A scene snapshot = { boxes, boxVisibility, elements, background, zOrder }.
     // Applying replaces the whole visual layout in one shot (and persists it).
-    // Camera device streams are untouched — a scene only positions/shows boxes.
     const applyScene = useCallback((snapshot = {}) => {
         const nBoxes = { ...DEFAULT_BOXES, ...(snapshot.boxes ?? {}) };
         const nVis   = { ...DEFAULT_VISIBILITY, ...(snapshot.boxVisibility ?? {}) };
@@ -307,6 +308,15 @@ const OverlayLayout = () => {
         };
         writeLayouts([...layouts, layout], { activeLayoutId: layoutId });
     }, [layouts, captureSnapshot, writeLayouts]);
+
+    // Add a ready-made starter layout: build a real container from the template,
+    // append it, make it active, and apply its first scene so the canvas updates.
+    const addStarterLayout = useCallback((starter) => {
+        const layout = buildStarterLayout(starter);
+        writeLayouts([...layouts, layout], { activeLayoutId: layout.id });
+        const scene = layout.scenes[0];
+        if (scene) applyScene(scene.snapshot);
+    }, [layouts, writeLayouts, applyScene]);
 
     const renameLayout = useCallback((id, name) => {
         writeLayouts(layouts.map(l => l.id === id ? { ...l, name: (name || '').trim() || l.name } : l));
@@ -714,17 +724,33 @@ const OverlayLayout = () => {
     // ── Memoised DraggableBox children — prevents re-renders on box drag ─────
     // Each child only re-creates when its own data changes (stream, social info, etc.)
     const camStyles = layoutSettings.camStyles ?? {};
-    const framedCam = (slot, stream, label) => {
+    // The frame (border/glow) is CSS and renders in OBS. The CENTER is a
+    // placeholder: in the editor it shows a label so you can position the box;
+    // in live/OBS mode it's fully transparent so the native OBS webcam shows
+    // through the frame.
+    const framedCam = (slot, label, showLabel) => {
         const cs = camStyles[slot] ?? DEFAULT_CAM_STYLE;
         return (
             <CameraFrame frame={cs.frame} radius={cs.radius} accent={cs.accent ?? theme.accent} accent2={cs.accent2 ?? theme.accent2}>
-                <VideoFeed stream={stream} label={label} />
+                <div style={{
+                    width: '100%', height: '100%', boxSizing: 'border-box',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    background: showLabel ? 'rgba(255,255,255,0.04)' : 'transparent',
+                    border: showLabel ? '1px dashed rgba(255,255,255,0.18)' : 'none',
+                }}>
+                    {showLabel && (
+                        <div style={{ textAlign: 'center', pointerEvents: 'none', fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1 }}>
+                            <div style={{ fontSize: 11, fontWeight: 700, color: 'rgba(255,255,255,0.7)' }}>{label}</div>
+                            <div style={{ fontSize: 8, marginTop: 3, color: 'rgba(255,255,255,0.4)' }}>OBS source</div>
+                        </div>
+                    )}
+                </div>
             </CameraFrame>
         );
     };
-    const faceCamChild = useMemo(() => framedCam('faceCam', streams.faceCam, 'CAM 01'), [streams.faceCam, camStyles.faceCam, theme.accent, theme.accent2]);
-    const handCamChild = useMemo(() => framedCam('handCam', streams.handCam, 'HAND'), [streams.handCam, camStyles.handCam, theme.accent, theme.accent2]);
-    const roomCamChild = useMemo(() => framedCam('roomCam', streams.roomCam, 'ROOM'), [streams.roomCam, camStyles.roomCam, theme.accent, theme.accent2]);
+    const faceCamChild = useMemo(() => framedCam('faceCam', 'CAM 01', editMode), [editMode, camStyles.faceCam, theme.accent, theme.accent2]);
+    const handCamChild = useMemo(() => framedCam('handCam', 'HAND', editMode), [editMode, camStyles.handCam, theme.accent, theme.accent2]);
+    const roomCamChild = useMemo(() => framedCam('roomCam', 'ROOM', editMode), [editMode, camStyles.roomCam, theme.accent, theme.accent2]);
     const aiCompanionChild = useMemo(() => (
         <div className="w-full h-full overflow-hidden"><AICompanion /></div>
     ), []);
@@ -829,7 +855,6 @@ const OverlayLayout = () => {
                         onOpenBackground={() => { setShowBgPanel(v => !v); setShowThemePanel(false); }}
                         onOpenTheme={() => { setShowThemePanel(v => !v); setShowBgPanel(false); }}
                         onResetLayout={resetLayout}
-                        streams={streams}
                         zOrder={zOrder}
                         onLayerUp={layerUp}
                         onLayerDown={layerDown}
@@ -852,13 +877,6 @@ const OverlayLayout = () => {
                         ) : (
                             <CameraEditor
                                 slot={selectedCamera}
-                                devices={capture.devices.cameras}
-                                selectedDeviceId={capture.selectedDevices[selectedCamera]}
-                                onSelectDevice={capture.setSelectedDevice}
-                                active={!!streams[selectedCamera]}
-                                onStart={capture.startCameraStream}
-                                onStop={capture.stopCameraStream}
-                                error={capture.errors[selectedCamera]}
                                 camStyle={{ ...DEFAULT_CAM_STYLE, accent: theme.accent, ...(camStyles[selectedCamera] ?? {}) }}
                                 onChangeCamStyle={(changes) => updateCamStyle(selectedCamera, changes)}
                             />
@@ -1050,6 +1068,8 @@ const OverlayLayout = () => {
                 <LayoutGallery
                     layouts={layouts}
                     activeLayoutId={activeLayoutId}
+                    starters={STARTER_LAYOUTS}
+                    onAddStarter={(s) => { addStarterLayout(s); setShowGallery(false); }}
                     onClose={() => setShowGallery(false)}
                     onCreate={createLayout}
                     onSwitch={(id) => { switchLayout(id); setShowGallery(false); }}

@@ -121,8 +121,6 @@ const ELEMENT_TYPE_MAP = Object.fromEntries(ELEMENT_TYPES.map(t => [t.type, t]))
 const CONTENT_ELEMENTS = ELEMENT_TYPES.filter(t => t.group !== 'shape');
 const SHAPE_ELEMENTS = ELEMENT_TYPES.filter(t => t.group === 'shape');
 
-const CAMERA_IDS = ['faceCam', 'handCam', 'roomCam'];
-
 // ── Sub-components ────────────────────────────────────────────────────────────
 
 const SectionLabel = ({ children }) => (
@@ -373,8 +371,6 @@ const LayersPanel = ({
     onOpenBackground,
     onOpenTheme,
     onResetLayout,
-    // Camera live status
-    streams = {},
     // Z-order (built-ins)
     zOrder = [],
     onLayerUp,
@@ -535,7 +531,6 @@ const LayersPanel = ({
                 )}
 
                 {presentBuiltins.map(layer => {
-                    const isCam = CAMERA_IDS.includes(layer.id);
                     return (
                         <LayerRow
                             key={layer.id}
@@ -544,7 +539,6 @@ const LayersPanel = ({
                             color={layer.color}
                             visible
                             selected={selectedBox === layer.id}
-                            live={isCam ? !!streams[layer.id] : undefined}
                             onSelect={() => onSelectBox(layer.id)}
                             onUp={() => onLayerUp?.(layer.id)}
                             onDown={() => onLayerDown?.(layer.id)}
