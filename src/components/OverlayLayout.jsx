@@ -1,7 +1,7 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronUp, Circle, Film, LayoutGrid, RotateCcw, Save } from 'lucide-react';
+import { Check, ChevronUp, Circle, Film, GripHorizontal, LayoutGrid, Play, RotateCcw, Save } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { layoutUrl } from '../config.js';
+import { getRoom, isDefaultRoom, layoutUrl, newRoomId, setRoomInUrl, shareLinks } from '../config.js';
 import { useOBS } from '../context/OBSContext';
 import AICompanion from './AICompanion';
 import BackgroundPanel, { bgToStyle } from './BackgroundPanel';
@@ -122,6 +122,10 @@ const OverlayLayout = () => {
     const [showThemePanel, setShowThemePanel] = useState(false);
     const [showGallery, setShowGallery] = useState(false);
     const [dockScenesOpen, setDockScenesOpen] = useState(false);
+    // Live dock can collapse to a tiny handle for a clean view.
+    const [dockCollapsed, setDockCollapsed] = useState(false);
+    // Brief confirmation after "Go Live" mints/links a room.
+    const [liveToast, setLiveToast] = useState(null);
     // When set, the next click/drag on the canvas places a new element of this
     // type (click = default size at point, drag = drawn box). null = off.
     const [placingType, setPlacingType] = useState(null);
@@ -270,6 +274,32 @@ const OverlayLayout = () => {
 
     // Installing a pack applies its theme + signature scene in one shot.
     const installPack = useCallback((pack) => applyScene(packSnapshot(pack)), [applyScene]);
+
+    // ── Go Live ──────────────────────────────────────────────────────────────
+    // Give this session its own private room so multiple users don't collide on
+    // the shared `default` slot. On first use it mints a meeting-style id, rewrites
+    // the URL, seeds the new slot with the current design (one shallow-merged POST,
+    // so the room is born complete), and copies the OBS browser-source link to the
+    // clipboard. If already in a room, it just re-copies the link.
+    const goLive = useCallback(async () => {
+        const fresh = isDefaultRoom();
+        if (fresh) {
+            setRoomInUrl(newRoomId());
+            try {
+                await fetch(layoutUrl(), {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ ...layoutSettings, boxes: boxesRef.current, zOrder, _clientId: SESSION_ID }),
+                });
+            } catch (e) { console.error(e); }
+        }
+        const room = getRoom();
+        const links = shareLinks(room);
+        let copied = false;
+        try { await navigator.clipboard.writeText(links.obs); copied = true; } catch { /* clipboard blocked */ }
+        setLiveToast({ room, ...links, fresh, copied });
+        setTimeout(() => setLiveToast(null), 7000);
+    }, [layoutSettings, zOrder]);
 
     // ── Layouts → Scenes ─────────────────────────────────────────────────────
     // A LAYOUT is a named container (a "show": e.g. Valorant Stream). It holds
@@ -1004,6 +1034,17 @@ const OverlayLayout = () => {
             {/* ── LIVE MODE DOCK — minimal pill; hidden while recording or in ?obs clean mode ── */}
             {!editMode && !isRecording && !CLEAN_MODE && (
                 <div style={{ position: 'absolute', bottom: 16, left: '50%', transform: 'translateX(-50%)', zIndex: 200 }}>
+                    {dockCollapsed ? (
+                        <button
+                            onClick={() => setDockCollapsed(false)}
+                            title="Show controls"
+                            style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', width: 56, height: 18, padding: 0, cursor: 'pointer', background: 'rgba(6,6,16,0.7)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 9, color: 'rgba(255,255,255,0.4)', boxShadow: '0 4px 20px rgba(0,0,0,0.5)', transition: 'all 0.15s' }}
+                            onMouseEnter={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.85)'; e.currentTarget.style.background = 'rgba(6,6,16,0.92)'; }}
+                            onMouseLeave={e => { e.currentTarget.style.color = 'rgba(255,255,255,0.4)'; e.currentTarget.style.background = 'rgba(6,6,16,0.7)'; }}
+                        >
+                            <GripHorizontal size={14} />
+                        </button>
+                    ) : (
                     <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
                         {/* Scene switcher — change scene without entering edit mode */}
                         {activeLayout && activeLayout.scenes.length > 0 && (
@@ -1059,9 +1100,40 @@ const OverlayLayout = () => {
                         </DockBtn>
                         <HdrSep />
                         <DockBtn onClick={() => setEditMode(true)}>Edit Layout</DockBtn>
+                        <HdrSep />
+                        <DockBtn onClick={goLive} active={!isDefaultRoom()} title={isDefaultRoom() ? 'Go Live — create a private room & copy the OBS link' : `Live in room ${getRoom()} — copy the OBS link again`}>
+                            <Play size={11} style={{ marginRight: 4 }} />{isDefaultRoom() ? 'Go Live' : 'Copy Link'}
+                        </DockBtn>
+                        <DockBtn onClick={() => setDockCollapsed(true)} title="Hide controls for a clean view">
+                            <ChevronUp size={12} style={{ transform: 'rotate(180deg)' }} />
+                        </DockBtn>
                     </div>
+                    )}
                 </div>
             )}
+
+            {/* Go Live confirmation toast — bottom-center, above the dock */}
+            <AnimatePresence>
+                {liveToast && !CLEAN_MODE && (
+                    <motion.div
+                        initial={{ opacity: 0, y: 12 }}
+                        animate={{ opacity: 1, y: 0 }}
+                        exit={{ opacity: 0, y: 12 }}
+                        transition={{ duration: 0.18 }}
+                        style={{ position: 'absolute', bottom: 64, left: '50%', transform: 'translateX(-50%)', zIndex: 400, maxWidth: 380, background: 'rgba(6,6,16,0.96)', backdropFilter: 'blur(24px)', border: '1px solid rgba(99,102,241,0.35)', borderRadius: 12, padding: '12px 16px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', color: 'rgba(255,255,255,0.9)', fontFamily: 'monospace' }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 7, fontSize: 11, letterSpacing: 1, textTransform: 'uppercase', color: '#a5b4fc' }}>
+                            <Check size={13} />{liveToast.fresh ? 'Room created' : 'Live'} · {liveToast.room}
+                        </div>
+                        <div style={{ marginTop: 6, fontSize: 10.5, lineHeight: 1.5, color: 'rgba(255,255,255,0.6)' }}>
+                            {liveToast.copied ? 'OBS link copied to clipboard.' : 'Copy the OBS link below.'} Paste it into OBS as a Browser Source.
+                        </div>
+                        <div style={{ marginTop: 8, padding: '6px 8px', borderRadius: 6, background: 'rgba(255,255,255,0.05)', border: '1px solid rgba(255,255,255,0.08)', fontSize: 10, color: 'rgba(255,255,255,0.8)', wordBreak: 'break-all', userSelect: 'all' }}>
+                            {liveToast.obs}
+                        </div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
             {/* Layouts gallery (the show/collection switcher) — both modes */}
             {showGallery && (

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AtSign, Globe, Instagram, MessageCircle, Music2, Twitch, Twitter, Youtube } from 'lucide-react';
 import { DEFAULT_THEME, resolveElement } from '../theme/themes';
 import { getMood } from '../theme/moods';
@@ -184,16 +184,47 @@ const ClockElement = ({ element }) => {
         hour: '2-digit', minute: '2-digit', second: '2-digit',
     });
 
+    // Boxes are %-based but fontSize is fixed px, so the same clock occupies a
+    // different fraction of its box depending on canvas pixel width (editor panel
+    // vs full-width OBS browser source) — and would clip. Measure the natural
+    // single-line width against the box and scale down to fit. scrollWidth is the
+    // pre-transform layout width, so the ratio stays stable as we scale.
+    const wrapRef = useRef(null);
+    const textRef = useRef(null);
+    const [scale, setScale] = useState(1);
+    useLayoutEffect(() => {
+        const fit = () => {
+            const wrap = wrapRef.current, txt = textRef.current;
+            if (!wrap || !txt) return;
+            // scrollWidth under-reports the painted width slightly (trailing
+            // letter-spacing, the narrow no-break space before AM/PM, text-shadow
+            // blur), so reserve a font-proportional slop or the last glyph clips.
+            const slop = Math.max(8, (element.fontSize || 28) * 0.6);
+            const avail = wrap.clientWidth - slop, natural = txt.scrollWidth;
+            setScale(natural > avail && natural > 0 ? avail / natural : 1);
+        };
+        fit();
+        const ro = new ResizeObserver(fit);
+        if (wrapRef.current) ro.observe(wrapRef.current);
+        return () => ro.disconnect();
+    }, [time, element.fontSize, element.bold]);
+
     return (
-        <span style={{
-            fontSize: element.fontSize,
-            color: element.fontColor,
-            fontWeight: element.bold ? 'bold' : 'normal',
-            fontFamily: 'monospace',
-            textShadow: '0 2px 8px rgba(0,0,0,0.6)',
-            letterSpacing: 2,
-        }}>
-            {time}
+        <span ref={wrapRef} style={{ width: '100%', display: 'block', textAlign: 'center', overflow: 'hidden' }}>
+            <span ref={textRef} style={{
+                display: 'inline-block',
+                fontSize: element.fontSize,
+                color: element.fontColor,
+                fontWeight: element.bold ? 'bold' : 'normal',
+                fontFamily: 'monospace',
+                textShadow: '0 2px 8px rgba(0,0,0,0.6)',
+                letterSpacing: 2,
+                whiteSpace: 'nowrap',
+                transform: scale < 1 ? `scale(${scale})` : 'none',
+                transformOrigin: 'center',
+            }}>
+                {time}
+            </span>
         </span>
     );
 };

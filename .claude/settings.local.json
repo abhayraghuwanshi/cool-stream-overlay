@@ -6,7 +6,8 @@
       "WebSearch",
       "Bash(git commit -m 'Add countdown element + theme-token system *)",
       "PowerShell(npm run *)",
-      "Bash(npx vite *)"
+      "Bash(npx vite *)",
+      "Bash(npx eslint *)"
     ]
   }
 }

@@ -78,6 +78,35 @@ const pomodoro = (box, extra = {}) => ({
     bgColor: '#000000', bgOpacity: 0.45, borderRadius: '@radius',
     ...extra,
 });
+// Liquid-fill goal — a tall jar that fills with sloshing accent liquid.
+const liquidgoal = (label, current, target, box, extra = {}) => ({
+    type: 'liquidgoal', content: label, current, target, box,
+    fontSize: 15, fontColor: '#ffffff', bold: true, fillColor: '@accent',
+    bgColor: '#ffffff', bgOpacity: 0.08, borderRadius: 18,
+    ...extra,
+});
+// Sentiment mood-ring — auto-cycles by default so it breathes on its own; it is
+// also the single source of truth a channel-pet placed in the scene mirrors.
+const moodring = (box, extra = {}) => ({
+    type: 'moodring', box, mood: 'hype', auto: true, cycleSec: 18, ...extra,
+});
+// Channel pet — a little mascot that follows the live mood.
+const pet = (box, extra = {}) => ({ type: 'pet', box, ...extra });
+// Decision wheel — spin-to-pick; great for "chat decides" moments.
+const wheel = (options, box, extra = {}) => ({
+    type: 'wheel', box, options, spinSec: 4, auto: false, cycleSec: 30,
+    fontColor: '#ffffff', ...extra,
+});
+// Sticky note — a tilted scrap of paper for a to-do / agenda jotting.
+const note = (content, box, extra = {}) => ({
+    type: 'note', content, box, paperColor: '#fde68a', fontColor: '#3a2f10',
+    fontSize: 15, tilt: -3, ...extra,
+});
+// Clip-path primitives — decorative accents that re-skin to the theme accent.
+const hexagon = (box, extra = {}) => ({ type: 'hexagon', box, bgColor: '@accent', bgOpacity: 0.85, ...extra });
+const diamond = (box, extra = {}) => ({ type: 'diamond', box, bgColor: '@accent', bgOpacity: 0.85, ...extra });
+const star    = (box, extra = {}) => ({ type: 'star', box, bgColor: '@accent', bgOpacity: 0.9, ...extra });
+const ellipse = (box, extra = {}) => ({ type: 'circle', box, bgColor: '@accent', bgOpacity: 0.85, ...extra });
 
 // ── Scene builder ── stamps stable per-scene ids + shared element defaults ───
 const scene = (name, background, els = [], boxes = {}, vis = {}) => ({
@@ -135,6 +164,43 @@ const codingScene = (bg) =>
         pomodoro({ x: 2, y: 12, w: 18, h: 14 }),
         lowerthird('Your Name', 'Building something', { x: 2, y: 78, w: 34, h: 12 }),
     ], { faceCam: { x: 80, y: 73, w: 18, h: 24 } }, { faceCam: true });
+
+// Interactive community scene — the engagement kit: mood-ring + matching pet,
+// a spin-the-wheel for chat decisions, and a sticky agenda note. Big centred cam.
+const communityScene = (bg, { name = 'Your Name', role = 'Community hangout' } = {}) =>
+    scene('Community', bg, [
+        live({ x: 2, y: 3, w: 11, h: 6 }),
+        moodring({ x: 2, y: 14, w: 10, h: 18 }),
+        pet({ x: 2, y: 74, w: 9, h: 18 }),
+        wheel(['Yes', 'No', 'Maybe', 'Chat picks', 'Spin again', 'Dealer\'s choice'], { x: 73, y: 8, w: 17, h: 30 }),
+        note('Today:\n• new emotes\n• Q&A @ 1h\n• giveaway!', { x: 73, y: 46, w: 23, h: 34 }),
+        lowerthird(name, role, { x: 27, y: 76, w: 44, h: 11 }),
+    ], { faceCam: { x: 27, y: 14, w: 44, h: 58 } }, { faceCam: true });
+
+// Deep-work focus scene — pomodoro, a liquid "coffee" jar, a to-do sticky, and a
+// pet keeping you company. Corner cam so the code/screen stays the star.
+const focusScene = (bg, { name = 'Your Name', role = 'Deep work' } = {}) =>
+    scene('Focus', bg, [
+        live({ x: 2, y: 3, w: 11, h: 6 }),
+        pomodoro({ x: 2, y: 12, w: 18, h: 16 }),
+        liquidgoal('Coffee', 6, 10, { x: 2, y: 32, w: 9, h: 26 }),
+        note('TODO\n• fix overlay bug\n• ship v2\n• reply DMs', { x: 2, y: 62, w: 21, h: 30 }),
+        pet({ x: 86, y: 64, w: 11, h: 16 }),
+        lowerthird(name, role, { x: 76, y: 83, w: 22, h: 11 }),
+    ], { faceCam: { x: 78, y: 36, w: 20, h: 26 } }, { faceCam: true });
+
+// Gaming HUD scene — a liquid sub-goal jar, a progress bar, a mood-ring, a glow
+// cam frame and a hex accent. Transparent so the game sits underneath in OBS.
+const hudScene = (bg, { goalLabel = 'Sub Goal' } = {}) =>
+    scene('Gameplay HUD', bg, [
+        live({ x: 2, y: 3, w: 11, h: 6 }),
+        clock({ x: 85, y: 3, w: 13, h: 6 }),
+        hexagon({ x: 3, y: 37, w: 5, h: 8 }, { bgOpacity: 0.9 }),
+        liquidgoal(goalLabel, 14, 25, { x: 2, y: 46, w: 9, h: 32 }),
+        goal('Follower Goal', 120, 200, { x: 2, y: 84, w: 30, h: 7 }),
+        moodring({ x: 88, y: 52, w: 9, h: 16 }),
+        frame({ x: 79, y: 72, w: 20, h: 26 }),
+    ], { faceCam: { x: 79, y: 72, w: 20, h: 26 } }, { faceCam: true });
 
 const brbScene = (bg, { title = 'BE RIGHT BACK', tagline = "Don't go anywhere" } = {}) =>
     scene('Be Right Back', bg, [
@@ -240,6 +306,99 @@ export const STARTER_LAYOUTS = [
             startingScene(grad('#1a1005', '#0a0a0f', '135deg'), { title: 'STARTING SOON', tagline: 'Setting up the workspace' }),
             codingScene(transparent),
             brbScene(grad('#1a1005', '#0a0a0f', '135deg'), { title: 'SHORT BREAK', tagline: 'Coffee refill — back soon' }),
+        ],
+    },
+    {
+        id: 'emerald-grove', name: 'Emerald Grove', themeId: 'emerald',
+        tagline: 'Cozy green, just chatting',
+        scenes: [
+            startingScene(grad('#04140d', '#0a0a0f', '160deg'), { title: 'STARTING SOON', tagline: 'Settling in — grab a cuppa', handle: '@emerald' }),
+            chatScene(grad('#05180f', '#0a0a0f', '160deg'), { role: 'Cozy stream' }),
+            brbScene(grad('#04140d', '#0a0a0f', '160deg'), { title: 'BE RIGHT BACK', tagline: 'Watering the plants 🌱' }),
+        ],
+    },
+    {
+        id: 'royal-velvet', name: 'Royal Velvet', themeId: 'royale',
+        tagline: 'Purple & gold, premium serif',
+        scenes: [
+            startingScene(grad('#100726', '#000000', '135deg'), { title: 'STARTING SOON', tagline: 'A royal broadcast begins' }),
+            liveScene(transparent, { role: 'Live · Premiere' }),
+            endingScene(grad('#100726', '#000000', '135deg'), { title: 'UNTIL NEXT TIME' }),
+        ],
+    },
+    {
+        id: 'frostbite', name: 'Frostbite', themeId: 'frost',
+        tagline: 'Icy blue, soft & competitive',
+        scenes: [
+            startingScene(grad('#0a1420', '#0a0a1a', '160deg'), { title: 'COOLING DOWN…', tagline: 'Stream warming up' }),
+            gameplayScene(transparent, { goalLabel: 'Win Goal' }),
+            brbScene(grad('#0a1420', '#0a0a1a', '160deg'), { title: 'BE RIGHT BACK', tagline: 'Chilling for a sec ❄️' }),
+        ],
+    },
+    {
+        id: 'the-matrix', name: 'The Matrix', themeId: 'matrix',
+        tagline: 'Terminal green, hacker coding',
+        scenes: [
+            startingScene(grad('#020a04', '#000000', '160deg'), { title: 'INITIALIZING…', tagline: 'Compiling the stream', handle: '@neo' }),
+            codingScene(transparent),
+            brbScene(grad('#020a04', '#000000', '160deg'), { title: 'AFK://BREAK', tagline: 'Process suspended — back soon' }),
+        ],
+    },
+    {
+        id: 'bubblegum-pop', name: 'Bubblegum Pop', themeId: 'bubblegum',
+        tagline: 'Pink × purple, playful & soft',
+        scenes: [
+            startingScene(grad('#1a0a16', '#0a0a0f', '160deg'), { title: 'STARTING SOON', tagline: 'Sweet things incoming ✨' }),
+            chatScene(transparent, { role: 'Just vibing' }),
+            endingScene(grad('#1a0a16', '#0a0a0f', '160deg'), { title: 'THANKS FOR HANGING OUT' }),
+        ],
+    },
+    {
+        id: 'inferno-arena', name: 'Inferno Arena', themeId: 'inferno',
+        tagline: 'Fiery orange-red, esports heat',
+        scenes: [
+            startingScene(grad('#1a0805', '#0a0a0f', '135deg'), { title: 'HEATING UP', tagline: 'Match igniting soon 🔥' }),
+            gameplayScene(transparent, { goalLabel: 'Kill Streak' }),
+            endingScene(grad('#1a0805', '#0a0a0f', '135deg'), { title: 'GG · STAY FIRED UP' }),
+        ],
+    },
+    {
+        id: 'cosmic-drift', name: 'Cosmic Drift', themeId: 'cosmic',
+        tagline: 'Galaxy indigo & magenta, chill',
+        scenes: [
+            startingScene(grad('#0a0820', '#000000', '160deg'), { title: 'STARTING SOON', tagline: 'Drifting into orbit 🚀' }),
+            liveScene(transparent, { role: 'Live from space' }),
+            brbScene(grad('#0a0820', '#000000', '160deg'), { title: 'BE RIGHT BACK', tagline: 'Refueling — back shortly' }),
+        ],
+    },
+    // ── Component-rich showcases ── these lean on the playful elements (mood
+    // ring, pet, decision wheel, sticky note, liquid goal, HUD shapes) so the
+    // gallery shows off the full kit, each with a clear streaming purpose.
+    {
+        id: 'community-hub', name: 'Community Hub', themeId: 'bubblegum',
+        tagline: 'Wheel · pet · notes — interactive chat',
+        scenes: [
+            startingScene(grad('#1a0a16', '#0a0a0f', '160deg'), { title: 'STARTING SOON', tagline: 'Warming up the community ✨' }),
+            communityScene(transparent, { role: 'Community hangout' }),
+            endingScene(grad('#1a0a16', '#0a0a0f', '160deg'), { title: 'THANKS FOR HANGING OUT' }),
+        ],
+    },
+    {
+        id: 'focus-flow', name: 'Focus Flow', themeId: 'emerald',
+        tagline: 'Pomodoro · coffee jar · to-dos — deep work',
+        scenes: [
+            startingScene(grad('#04140d', '#0a0a0f', '160deg'), { title: 'STARTING SOON', tagline: 'Booting the workspace' }),
+            focusScene(transparent, { role: 'Deep work' }),
+            brbScene(grad('#04140d', '#0a0a0f', '160deg'), { title: 'SHORT BREAK', tagline: 'Refilling the coffee ☕' }),
+        ],
+    },
+    {
+        id: 'battle-station', name: 'Battle Station', themeId: 'inferno',
+        tagline: 'Liquid goals · HUD · mood — full gaming kit',
+        scenes: [
+            startingScene(grad('#1a0805', '#0a0a0f', '135deg'), { title: 'WARMING UP', tagline: 'Match starting soon 🔥' }),
+            hudScene(transparent, { goalLabel: 'Sub Goal' }),
+            endingScene(grad('#1a0805', '#0a0a0f', '135deg'), { title: 'GG · WELL PLAYED' }),
         ],
     },
 ];

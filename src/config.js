@@ -40,3 +40,34 @@ export function getRoom() {
 export function layoutUrl() {
     return `${LAYOUT_API}/layout?room=${encodeURIComponent(getRoom())}`;
 }
+
+// True when no explicit room was chosen — i.e. we're on the shared default slot
+// that every fresh visitor lands on. "Go Live" mints a private room from here.
+export function isDefaultRoom() {
+    return getRoom() === 'default';
+}
+
+// Meeting-style, hard-to-guess, easy-to-say id, e.g. "swift-otter-4821".
+const ROOM_ADJECTIVES = ['swift', 'calm', 'bold', 'bright', 'keen', 'brave', 'lucky', 'clever', 'mellow', 'noble', 'quiet', 'rapid', 'sunny', 'vivid', 'witty', 'cosmic'];
+const ROOM_NOUNS = ['otter', 'falcon', 'panda', 'tiger', 'heron', 'lynx', 'comet', 'maple', 'river', 'ember', 'pixel', 'cobra', 'raven', 'koala', 'badger', 'nebula'];
+const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+export function newRoomId() {
+    return `${pick(ROOM_ADJECTIVES)}-${pick(ROOM_NOUNS)}-${Math.floor(1000 + Math.random() * 9000)}`;
+}
+
+// Write a room id into the current URL without reloading, preserving other
+// params (e.g. ?obs). getRoom()/layoutUrl() read it live, so the next save and
+// the next poll automatically target the new slot.
+export function setRoomInUrl(room) {
+    const url = new URL(window.location.href);
+    url.searchParams.set('room', room);
+    window.history.replaceState(null, '', url);
+}
+
+// Editor + OBS links for a given room, absolute so they're copy-pasteable.
+export function shareLinks(room) {
+    const base = `${window.location.origin}${window.location.pathname}`;
+    const q = `room=${encodeURIComponent(room)}`;
+    return { editor: `${base}?${q}`, obs: `${base}?obs&${q}` };
+}
