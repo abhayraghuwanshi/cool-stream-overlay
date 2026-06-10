@@ -44,14 +44,22 @@
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
-  min-width: 320px;
+  /* NOTE: do NOT flex-center #root here. On mobile, 100vh counts the area behind
+     the browser toolbars, so #root is taller than the visible screen — centering
+     an oversized child clips it top & bottom and pushes the header off-screen
+     (the "layout breaks in portrait" bug). #root just fills the viewport instead. */
   min-height: 100vh;
+  min-height: 100dvh;
   background-color: transparent;
   /* Critical for OBS transparency */
   overflow: hidden;
   /* Prevent scrollbars in OBS */
+}
+
+#root {
+  width: 100%;
+  min-height: 100vh;
+  min-height: 100dvh;
 }
 
 /* Scrollbar styling for interactive elements */

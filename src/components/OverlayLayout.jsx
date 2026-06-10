@@ -1,5 +1,5 @@
 import { AnimatePresence, motion } from 'framer-motion';
-import { Check, ChevronUp, Circle, Film, GripHorizontal, LayoutGrid, Play, RotateCcw, Save } from 'lucide-react';
+import { Check, ChevronUp, Circle, Film, GripHorizontal, Layers, LayoutGrid, Pencil, Play, RotateCcw, Save, X } from 'lucide-react';
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { getRoom, isDefaultRoom, layoutUrl, newRoomId, setRoomInUrl, shareLinks } from '../config.js';
 import { useOBS } from '../context/OBSContext';
@@ -96,6 +96,45 @@ const CLEAN_MODE = (() => {
     }
 })();
 
+// The overlay is designed against a fixed 1920×1080 canvas (OBS's source size);
+// element font sizes etc. are px tuned for that. To preview it correctly at any
+// viewport (a phone, a small window) we render at that real size and CSS-scale
+// the whole canvas to fit — so everything scales uniformly instead of fixed-px
+// fonts overflowing tiny %-based boxes.
+const BASE_W = 1920;
+const BASE_H = 1080;
+const useFitScale = () => {
+    const get = () => Math.min(window.innerWidth / BASE_W, window.innerHeight / BASE_H);
+    const [scale, setScale] = useState(get);
+    useEffect(() => {
+        const on = () => setScale(get());
+        window.addEventListener('resize', on);
+        window.visualViewport?.addEventListener('resize', on);
+        return () => {
+            window.removeEventListener('resize', on);
+            window.visualViewport?.removeEventListener('resize', on);
+        };
+    }, []);
+    return scale;
+};
+
+// True on phone-width / narrow viewports, where the editor's fixed side panels
+// (240 + 260 px) can't sit alongside the canvas. In that case the panels become
+// overlays (a slide-in drawer + a bottom sheet) instead of eating canvas width.
+const useIsNarrow = (bp = 760) => {
+    const [narrow, setNarrow] = useState(
+        () => typeof window !== 'undefined' && window.innerWidth < bp
+    );
+    useEffect(() => {
+        const mq = window.matchMedia(`(max-width: ${bp - 1}px)`);
+        const on = () => setNarrow(mq.matches);
+        on();
+        mq.addEventListener('change', on);
+        return () => mq.removeEventListener('change', on);
+    }, [bp]);
+    return narrow;
+};
+
 const OverlayLayout = () => {
     const { isRecording, isConnected } = useOBS();
     const canvasRef = useRef(null);
@@ -117,6 +156,11 @@ const OverlayLayout = () => {
         theme: DEFAULT_THEME,
         scenes: [],
     });
+
+    // ── Responsive editor ── on narrow phones the side panels become overlays.
+    const isNarrow = useIsNarrow();
+    const fitScale = useFitScale();
+    const [drawerOpen, setDrawerOpen] = useState(false); // left (layers) drawer on mobile
 
     const [showBgPanel, setShowBgPanel] = useState(false);
     const [showThemePanel, setShowThemePanel] = useState(false);
@@ -159,7 +203,7 @@ const OverlayLayout = () => {
     }, [isRecording]);
 
     // ── Canvas click — deselect ──────────────────────────────────────────────
-    const onCanvasMouseDown = useCallback((e) => {
+    const onCanvasPointerDown = useCallback((e) => {
         if (e.target === e.currentTarget) {
             setSelectedBox(null);
             setSelectedElementId(null);
@@ -180,6 +224,12 @@ const OverlayLayout = () => {
         window.addEventListener('keydown', onKey);
         return () => window.removeEventListener('keydown', onKey);
     }, [placingType]);
+
+    // On mobile, picking a layer / selecting a box / arming placement should
+    // dismiss the layers drawer so the canvas (and the bottom-sheet editor) show.
+    useEffect(() => {
+        if (isNarrow && (selectedBox || selectedElementId || placingType)) setDrawerOpen(false);
+    }, [isNarrow, selectedBox, selectedElementId, placingType]);
 
     // ── Stable layout updater (non-box settings only) ───────────────────────
     const updateLayout = useCallback((updates) => {
@@ -434,7 +484,8 @@ const OverlayLayout = () => {
     }, []);
 
     // Canvas placement gesture: click = default-size at point, drag = drawn box.
-    const onPlaceMouseDown = useCallback((e) => {
+    // Pointer events so tap/drag-to-place works with touch on phones.
+    const onPlacePointerDown = useCallback((e) => {
         const type = placingType;
         const canvas = canvasRef.current;
         if (!type || !canvas) return;
@@ -460,8 +511,9 @@ const OverlayLayout = () => {
         };
 
         const onUp = (ev) => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup', onUp);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup', onUp);
+            window.removeEventListener('pointercancel', onUp);
             if (preview) preview.style.display = 'none';
             const clamp = (v, lo, hi) => Math.max(lo, Math.min(hi, v));
 
@@ -491,8 +543,9 @@ const OverlayLayout = () => {
             setPlacingType(null);
         };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup', onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup', onUp);
+        window.addEventListener('pointercancel', onUp);
     }, [placingType, addElement]);
 
     const updateElement = useCallback((id, changes) => {
@@ -805,10 +858,16 @@ const OverlayLayout = () => {
         : { background: '#050510' };
     const activeCanvasBg = inEditor ? {} : canvasBg;
 
+    // Live preview in a normal browser (phone/desktop) — NOT the OBS source.
+    // OBS sizes its browser source to 16:9, so there we fill inset:0. Everywhere
+    // else (e.g. a phone in portrait) we letterbox the canvas to 16:9 so the
+    // %-based overlay doesn't stretch.
+    const livePreview = !inEditor && !isRecording && !CLEAN_MODE;
+
     return (
         <div style={{
-            width: '100vw', height: '100vh', overflow: 'hidden', position: 'relative',
-            background: inEditor ? '#0a0a12' : 'transparent',
+            width: '100vw', height: '100dvh', overflow: 'hidden', position: 'relative',
+            background: inEditor ? '#0a0a12' : (livePreview ? '#050510' : 'transparent'),
         }}>
             {/* OBS recording flash */}
             {isRecording && (
@@ -829,16 +888,33 @@ const OverlayLayout = () => {
                     display: 'flex', alignItems: 'center', justifyContent: 'space-between',
                     padding: '0 12px 0 10px',
                 }}>
-                    {/* Left: logo + title */}
+                    {/* Left: layers toggle (mobile) + logo + title */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                        {isNarrow && (
+                            <button
+                                onClick={() => setDrawerOpen(o => !o)}
+                                title="Layers & sources"
+                                style={{
+                                    display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 4,
+                                    height: 26, padding: '0 9px', flexShrink: 0, cursor: 'pointer',
+                                    borderRadius: 6, border: '1px solid rgba(99,102,241,0.4)',
+                                    background: drawerOpen ? 'rgba(79,70,229,0.4)' : 'rgba(99,102,241,0.16)',
+                                    color: '#c7d2fe', fontSize: 9, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1,
+                                }}
+                            >
+                                <Layers size={13} />Layers
+                            </button>
+                        )}
                         <div style={{
                             width: 18, height: 18, borderRadius: 4, flexShrink: 0,
                             background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.45)',
                             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#a5b4fc',
                         }}><Circle size={8} fill="#a5b4fc" strokeWidth={0} /></div>
-                        <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
-                            Overlay Studio
-                        </span>
+                        {!isNarrow && (
+                            <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
+                                Overlay Studio
+                            </span>
+                        )}
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
@@ -852,11 +928,25 @@ const OverlayLayout = () => {
                     </div>
                 </div>
 
-                {/* Left panel: layers + sources */}
+                {/* Mobile drawer backdrop — tap to dismiss the layers panel */}
+                {isNarrow && drawerOpen && (
+                    <div
+                        onClick={() => setDrawerOpen(false)}
+                        style={{ position: 'absolute', inset: 0, top: 40, zIndex: 350, background: 'rgba(0,0,0,0.5)' }}
+                    />
+                )}
+
+                {/* Left panel: layers + sources — fixed sidebar on desktop, slide-in drawer on phones */}
                 <div style={{
-                    position: 'absolute', top: 40, left: 0, bottom: 0, width: 240, zIndex: 300,
+                    position: 'absolute', top: 40, left: 0, bottom: 0, zIndex: isNarrow ? 360 : 300,
                     background: 'rgba(7,7,16,0.98)', borderRight: '1px solid rgba(255,255,255,0.07)',
                     overflow: 'hidden', display: 'flex', flexDirection: 'column',
+                    ...(isNarrow ? {
+                        width: 'min(280px, 85vw)',
+                        transform: drawerOpen ? 'translateX(0)' : 'translateX(-100%)',
+                        transition: 'transform 0.22s ease',
+                        boxShadow: drawerOpen ? '8px 0 40px rgba(0,0,0,0.6)' : 'none',
+                    } : { width: 240 }),
                 }}>
                     <LayersPanel
                         boxVisibility={boxVisibility}
@@ -891,13 +981,36 @@ const OverlayLayout = () => {
                     />
                 </div>
 
-                {/* Right panel: element editor or camera device picker */}
+                {/* Right panel: element editor or camera picker — sidebar on desktop, bottom sheet on phones */}
                 {rightPanelOpen && (
                     <div style={{
-                        position: 'absolute', top: 40, right: 0, bottom: 0, width: 260, zIndex: 300,
-                        background: 'rgba(7,7,16,0.98)', borderLeft: '1px solid rgba(255,255,255,0.07)',
-                        overflow: 'auto',
+                        position: 'absolute', zIndex: isNarrow ? 360 : 300,
+                        background: 'rgba(7,7,16,0.98)', overflow: 'auto',
+                        ...(isNarrow ? {
+                            left: 0, right: 0, bottom: 0, top: 'auto', maxHeight: '58vh',
+                            borderTop: '1px solid rgba(99,102,241,0.3)',
+                            borderTopLeftRadius: 14, borderTopRightRadius: 14,
+                            boxShadow: '0 -8px 40px rgba(0,0,0,0.6)',
+                        } : {
+                            top: 40, right: 0, bottom: 0, width: 260,
+                            borderLeft: '1px solid rgba(255,255,255,0.07)',
+                        }),
                     }}>
+                        {isNarrow && (
+                            <div style={{
+                                position: 'sticky', top: 0, zIndex: 1, display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                                padding: '8px 12px', background: 'rgba(7,7,16,0.98)', borderBottom: '1px solid rgba(255,255,255,0.06)',
+                            }}>
+                                <div style={{ width: 36, height: 4, borderRadius: 2, background: 'rgba(255,255,255,0.18)', margin: '0 auto' }} />
+                                <button
+                                    onClick={() => { setSelectedElementId(null); setSelectedBox(null); }}
+                                    title="Close"
+                                    style={{ position: 'absolute', right: 8, top: 6, padding: 4, background: 'transparent', border: 'none', color: 'rgba(255,255,255,0.5)', cursor: 'pointer' }}
+                                >
+                                    <X size={16} />
+                                </button>
+                            </div>
+                        )}
                         {selectedElement ? (
                             <ElementEditor
                                 element={selectedElement}
@@ -941,11 +1054,12 @@ const OverlayLayout = () => {
             <div style={{
                 position: 'absolute',
                 top:    inEditor ? 40 : 0,
-                left:   inEditor ? 240 : 0,
-                right:  inEditor ? (rightPanelOpen ? 260 : 0) : 0,
+                // On phones the panels float over the canvas, so it spans full width.
+                left:   inEditor && !isNarrow ? 240 : 0,
+                right:  inEditor && !isNarrow ? (rightPanelOpen ? 260 : 0) : 0,
                 bottom: 0,
                 overflow: inEditor ? 'auto' : undefined,
-                padding: inEditor ? 16 : 0,
+                padding: inEditor ? (isNarrow ? 8 : 16) : 0,
                 boxSizing: 'border-box',
                 ...(inEditor ? editorWorkspaceBg : { background: 'transparent' }),
             }}>
@@ -965,7 +1079,7 @@ const OverlayLayout = () => {
                 */}
                 <div
                     ref={canvasRef}
-                    onMouseDown={onCanvasMouseDown}
+                    onPointerDown={onCanvasPointerDown}
                     className={`font-inter overflow-hidden ${isRecording ? 'outline outline-4 outline-red-500/50' : ''}`}
                     style={{
                         isolation: 'isolate', // required for Element Capture (RestrictionTarget)
@@ -974,6 +1088,15 @@ const OverlayLayout = () => {
                             width: '100%',
                             aspectRatio: '16 / 9',
                             boxShadow: '0 0 0 1px rgba(255,255,255,0.08)',
+                        } : livePreview ? {
+                            // Render at the real 1920×1080 size and scale-to-fit so
+                            // every element matches its OBS proportions (fixed-px
+                            // fonts don't overflow tiny %-boxes). Centered, letterboxed.
+                            position: 'absolute',
+                            top: '50%', left: '50%',
+                            width: BASE_W, height: BASE_H,
+                            transform: `translate(-50%, -50%) scale(${fitScale})`,
+                            transformOrigin: 'center center',
                         } : {
                             position: 'absolute',
                             inset: 0,
@@ -1010,9 +1133,9 @@ const OverlayLayout = () => {
                     {/* ── Placement layer — click to drop / drag to draw a new element ── */}
                     {inEditor && placingType && (
                         <div
-                            onMouseDown={onPlaceMouseDown}
+                            onPointerDown={onPlacePointerDown}
                             onContextMenu={(e) => { e.preventDefault(); setPlacingType(null); }}
-                            style={{ position: 'absolute', inset: 0, zIndex: 500, cursor: 'crosshair' }}
+                            style={{ position: 'absolute', inset: 0, zIndex: 500, cursor: 'crosshair', touchAction: 'none' }}
                         >
                             <div ref={placePreviewRef} style={{
                                 position: 'absolute', display: 'none', pointerEvents: 'none',
@@ -1045,14 +1168,14 @@ const OverlayLayout = () => {
                             <GripHorizontal size={14} />
                         </button>
                     ) : (
-                    <div style={{ display: 'flex', alignItems: 'center', gap: 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: isNarrow ? 3 : 2, background: 'rgba(6,6,16,0.88)', backdropFilter: 'blur(24px)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 14, padding: isNarrow ? '6px 8px' : '5px 7px', boxShadow: '0 8px 40px rgba(0,0,0,0.72)', whiteSpace: 'nowrap', maxWidth: 'calc(100vw - 24px)' }}>
                         {/* Scene switcher — change scene without entering edit mode */}
                         {activeLayout && activeLayout.scenes.length > 0 && (
                             <div style={{ position: 'relative' }}>
                                 <DockBtn active={dockScenesOpen} onClick={() => setDockScenesOpen(o => !o)} title="Switch scene">
-                                    <Film size={11} style={{ marginRight: 4 }} />
-                                    {activeScene?.name ?? 'Scene'}
-                                    <ChevronUp size={11} style={{ marginLeft: 4, transform: dockScenesOpen ? 'none' : 'rotate(180deg)', transition: 'transform 0.15s', opacity: 0.6 }} />
+                                    <Film size={12} style={{ marginRight: isNarrow ? 0 : 4 }} />
+                                    {!isNarrow && (activeScene?.name ?? 'Scene')}
+                                    <ChevronUp size={11} style={{ marginLeft: isNarrow ? 1 : 4, transform: dockScenesOpen ? 'none' : 'rotate(180deg)', transition: 'transform 0.15s', opacity: 0.6 }} />
                                 </DockBtn>
                                 <AnimatePresence>
                                     {dockScenesOpen && (
@@ -1096,13 +1219,15 @@ const OverlayLayout = () => {
                         )}
                         {activeLayout && activeLayout.scenes.length > 0 && <HdrSep />}
                         <DockBtn onClick={() => setShowGallery(true)} title="Browse & switch saved layouts">
-                            <LayoutGrid size={11} style={{ marginRight: 4 }} />Layouts
+                            <LayoutGrid size={12} style={{ marginRight: isNarrow ? 0 : 4 }} />{!isNarrow && 'Layouts'}
                         </DockBtn>
                         <HdrSep />
-                        <DockBtn onClick={() => setEditMode(true)}>Edit Layout</DockBtn>
+                        <DockBtn onClick={() => setEditMode(true)} title="Edit layout">
+                            {isNarrow ? <Pencil size={12} /> : 'Edit Layout'}
+                        </DockBtn>
                         <HdrSep />
                         <DockBtn onClick={goLive} active={!isDefaultRoom()} title={isDefaultRoom() ? 'Go Live — create a private room & copy the OBS link' : `Live in room ${getRoom()} — copy the OBS link again`}>
-                            <Play size={11} style={{ marginRight: 4 }} />{isDefaultRoom() ? 'Go Live' : 'Copy Link'}
+                            <Play size={12} style={{ marginRight: 4 }} />{isDefaultRoom() ? 'Go Live' : 'Copy Link'}
                         </DockBtn>
                         <DockBtn onClick={() => setDockCollapsed(true)} title="Hide controls for a clean view">
                             <ChevronUp size={12} style={{ transform: 'rotate(180deg)' }} />

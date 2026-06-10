@@ -33,13 +33,13 @@ const DraggableBox = ({
     boxRef.current = box;
 
     // Tracks whether the current press turned into a drag/resize.
-    // onClick fires after mouseup — if didDrag is true, it's not a plain click so skip selection.
+    // onClick fires after pointerup — if didDrag is true, it's not a plain click so skip selection.
     const didDrag = useRef(false);
 
     const [hovered, setHovered] = useState(false);
 
     // ── Root click — select only on plain clicks, not after drag/resize ──────
-    const onRootMouseDown = () => {
+    const onRootPointerDown = () => {
         didDrag.current = false; // reset on every new press
     };
 
@@ -48,7 +48,10 @@ const DraggableBox = ({
     };
 
     // ── Drag ──────────────────────────────────────────────────────────────────
-    const onDragMouseDown = (e) => {
+    // Pointer events (not mouse) so this works with touch/pen on phones too. The
+    // handle sets `touch-action: none` so the browser won't pan/scroll instead of
+    // dispatching pointermove during a finger drag.
+    const onDragPointerDown = (e) => {
         if (!editMode) return;
         e.preventDefault();
         e.stopPropagation();
@@ -79,8 +82,9 @@ const DraggableBox = ({
         };
 
         const onUp = (ev) => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup',   onUp);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup',   onUp);
+            window.removeEventListener('pointercancel', onUp);
             anyDragging = false;
             if (didDrag.current) {
                 const dx = ev.clientX - startMouseX;
@@ -93,12 +97,13 @@ const DraggableBox = ({
             }
         };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup',   onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup',   onUp);
+        window.addEventListener('pointercancel', onUp);
     };
 
     // ── Resize ────────────────────────────────────────────────────────────────
-    const onResizeMouseDown = (e, dir) => {
+    const onResizePointerDown = (e, dir) => {
         e.preventDefault();
         e.stopPropagation();
 
@@ -139,8 +144,9 @@ const DraggableBox = ({
         };
 
         const onUp = () => {
-            window.removeEventListener('mousemove', onMove);
-            window.removeEventListener('mouseup',   onUp);
+            window.removeEventListener('pointermove', onMove);
+            window.removeEventListener('pointerup',   onUp);
+            window.removeEventListener('pointercancel', onUp);
             anyDragging = false;
             if (didDrag.current) {
                 onBoxChange(id, {
@@ -152,8 +158,9 @@ const DraggableBox = ({
             }
         };
 
-        window.addEventListener('mousemove', onMove);
-        window.addEventListener('mouseup',   onUp);
+        window.addEventListener('pointermove', onMove);
+        window.addEventListener('pointerup',   onUp);
+        window.addEventListener('pointercancel', onUp);
     };
 
     // ── Outline color ─────────────────────────────────────────────────────────
@@ -172,7 +179,7 @@ const DraggableBox = ({
         <div
             ref={elRef}
             data-box-id={id}
-            onMouseDown={onRootMouseDown}
+            onPointerDown={onRootPointerDown}
             onClick={onRootClick}
             onMouseEnter={() => { if (!anyDragging) setHovered(true);  }}
             onMouseLeave={() => { if (!anyDragging) setHovered(false); }}
@@ -194,13 +201,14 @@ const DraggableBox = ({
             {/* ── Drag handle — overlays top of content, never shifts it ── */}
             {editMode && (
                 <div
-                    onMouseDown={onDragMouseDown}
+                    onPointerDown={onDragPointerDown}
                     style={{
                         position: 'absolute',
                         top: 0, left: 0, right: 0,
                         height: 20,
                         zIndex: 31,
                         cursor: 'move',
+                        touchAction: 'none',
                         background: selected ? 'rgba(24,22,64,0.92)' : 'rgba(6,6,18,0.76)',
                         borderBottom: '1px solid rgba(99,102,241,0.2)',
                         display: 'flex',
@@ -256,11 +264,12 @@ const DraggableBox = ({
             {editMode && RESIZE_HANDLES.map(h => (
                 <div
                     key={h.id}
-                    onMouseDown={(e) => onResizeMouseDown(e, h.id)}
+                    onPointerDown={(e) => onResizePointerDown(e, h.id)}
                     style={{
                         position: 'absolute',
                         ...h.style,
                         zIndex: 32,
+                        touchAction: 'none',
                         background: h.id.length === 2
                             ? selected ? 'rgba(99,102,241,0.85)' : 'rgba(99,102,241,0.45)'
                             : selected ? 'rgba(99,102,241,0.25)' : 'rgba(99,102,241,0.1)',
