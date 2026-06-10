@@ -22,6 +22,22 @@
   96%           { transform: scaleY(0.1); }
 }
 
+/* Walking pet: a stepping waddle (feet planted, body rocks) used while roaming. */
+@keyframes petWalk {
+  0%   { transform: translateY(0)    rotate(-4deg); }
+  50%  { transform: translateY(-7%)  rotate(4deg); }
+  100% { transform: translateY(0)    rotate(-4deg); }
+}
+
+/* ── Side-view critter walk cycle ── legs swing about the hip; pairs run in
+   opposite phase via animation-delay. Body bobs; tail wags; idle = breathe. */
+@keyframes petStep   { 0%, 100% { transform: rotate(17deg); }  50% { transform: rotate(-17deg); } }
+@keyframes petTrot   { 0%, 100% { transform: translateY(0);  }  50% { transform: translateY(-2.5px); } }
+@keyframes petBreathe{ 0%, 100% { transform: scaleY(1);      }  50% { transform: scaleY(1.04); } }
+@keyframes petTailWag{ 0%, 100% { transform: rotate(-12deg); }  50% { transform: rotate(10deg); } }
+@keyframes petSlither{ 0%, 100% { transform: translateY(-5px); } 50% { transform: translateY(5px); } }
+@keyframes petTongue { 0%, 78%, 100% { opacity: 0; } 84%, 94% { opacity: 1; } }
+
 @theme {
   --color-obs-bg: rgba(0, 0, 0, 0);
 }

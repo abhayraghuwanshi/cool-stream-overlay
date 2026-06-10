@@ -87,10 +87,18 @@ const ELEMENT_TYPES = [
         <span style={{ width: 16, height: 16, borderRadius: '50%', border: '2.5px solid #38bdf8', boxShadow: '0 0 6px #38bdf8, inset 0 0 4px #38bdf8', display: 'block' }} />
     )},
     { type: 'pet',        label: 'Channel Pet', color: '#fbbf24', preview: (
-        <span style={{ position: 'relative', width: 16, height: 16, borderRadius: '46%', background: '#fbbf24', display: 'block' }}>
-            <span style={{ position: 'absolute', top: 6, left: 3.5, width: 2.5, height: 2.5, borderRadius: '50%', background: '#3a1a08' }} />
-            <span style={{ position: 'absolute', top: 6, right: 3.5, width: 2.5, height: 2.5, borderRadius: '50%', background: '#3a1a08' }} />
-        </span>
+        <svg width="18" height="15" viewBox="0 0 120 100">
+            {/* cute loaf cat */}
+            <path d="M22 30 L29 6 L46 26 Z" fill="#c2c2cc" />
+            <path d="M90 30 L83 6 L66 26 Z" fill="#c2c2cc" />
+            <rect x="30" y="78" width="11" height="16" rx="5.5" fill="#c2c2cc" />
+            <rect x="62" y="78" width="11" height="16" rx="5.5" fill="#c2c2cc" />
+            <ellipse cx="56" cy="57" rx="40" ry="33" fill="#c2c2cc" />
+            <ellipse cx="44" cy="53" rx="6" ry="7.6" fill="#3a2e36" />
+            <ellipse cx="68" cy="53" rx="6" ry="7.6" fill="#3a2e36" />
+            <circle cx="46" cy="50" r="2.4" fill="#fff" />
+            <circle cx="70" cy="50" r="2.4" fill="#fff" />
+        </svg>
     )},
     { type: 'wheel',      label: 'Decision Wheel', color: '#a855f7', preview: (
         <span style={{ position: 'relative', width: 18, height: 18, borderRadius: '50%', display: 'block', overflow: 'hidden',

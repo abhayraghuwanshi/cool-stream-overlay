@@ -856,18 +856,26 @@ const OverlayLayout = () => {
     const editorWorkspaceBg = inEditor && background && background.type !== 'transparent'
         ? bgToStyle(background)
         : { background: '#050510' };
-    const activeCanvasBg = inEditor ? {} : canvasBg;
-
     // Live preview in a normal browser (phone/desktop) — NOT the OBS source.
     // OBS sizes its browser source to 16:9, so there we fill inset:0. Everywhere
-    // else (e.g. a phone in portrait) we letterbox the canvas to 16:9 so the
-    // %-based overlay doesn't stretch.
+    // else (e.g. a phone in portrait, or a non-16:9 window) we letterbox the
+    // canvas to 16:9 so the %-based overlay doesn't stretch.
     const livePreview = !inEditor && !isRecording && !CLEAN_MODE;
+
+    // In live preview the canvas is letterboxed, leaving bars on the sides/top.
+    // To avoid a visible seam between the bars and the canvas, paint the scene
+    // background on the ROOT (full viewport) and keep the scaled canvas itself
+    // transparent — one continuous backdrop. (OBS keeps bg on the canvas so the
+    // source stays correctly sized/transparent.)
+    const livePreviewBg = (!background || background.type === 'transparent')
+        ? { background: '#050510' }
+        : bgToStyle(background);
+    const activeCanvasBg = inEditor ? {} : (livePreview ? {} : canvasBg);
 
     return (
         <div style={{
             width: '100vw', height: '100dvh', overflow: 'hidden', position: 'relative',
-            background: inEditor ? '#0a0a12' : (livePreview ? '#050510' : 'transparent'),
+            ...(inEditor ? { background: '#0a0a12' } : livePreview ? livePreviewBg : { background: 'transparent' }),
         }}>
             {/* OBS recording flash */}
             {isRecording && (

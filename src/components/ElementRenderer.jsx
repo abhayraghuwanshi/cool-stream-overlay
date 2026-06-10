@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AtSign, Globe, Instagram, MessageCircle, Music2, Twitch, Twitter, Youtube } from 'lucide-react';
 import { DEFAULT_THEME, resolveElement } from '../theme/themes';
 import { getMood } from '../theme/moods';
+import { DEFAULT_PET, PetMascot, WalkingPet } from './pets';
 
 // Social platforms surfaced by the `social` chip element. Each maps to a lucide
 // icon and a brand tint; platforms lucide doesn't ship (discord/tiktok/kick) use
@@ -153,7 +154,8 @@ export const defaultElement = (type, theme = DEFAULT_THEME) => {
             box: { x: 2, y: 58, w: 11, h: 20 },
         },
         pet: {
-            box: { x: 88, y: 60, w: 10, h: 18 },
+            species: DEFAULT_PET, walk: false, speed: 'medium',
+            box: { x: 78, y: 70, w: 16, h: 16 },
         },
         wheel: {
             options: ['Yes', 'No', 'Maybe', 'Ask chat'],
@@ -320,45 +322,6 @@ const PomodoroElement = ({ element }) => {
             <span style={{ fontSize: Math.max(9, (element.fontSize ?? 40) * 0.3), letterSpacing: 1 }}>
                 {count > 0 ? '🍅'.repeat(Math.min(count, 8)) + (count > 8 ? ` ${count}` : '') : ''}
             </span>
-        </div>
-    );
-};
-
-// ── Channel pet ── a little mascot whose face follows the active mood.
-const PetElement = ({ mood, opacity = 1 }) => {
-    const c = mood.color;
-    // Mouth shape per mood.
-    const mouth =
-        mood.mouth === 'open'
-            ? { width: '34%', height: '26%', background: 'rgba(20,8,12,0.85)', borderRadius: '0 0 60% 60% / 0 0 80% 80%' }
-            : mood.mouth === 'flat'
-                ? { width: '34%', height: 0, borderBottom: '3px solid rgba(20,8,12,0.7)' }
-                : mood.mouth === 'smile'
-                    ? { width: '40%', height: '24%', borderBottom: '3px solid rgba(20,8,12,0.75)', borderRadius: '0 0 70% 70%' }
-                    : /* soft */ { width: '32%', height: '18%', borderBottom: '3px solid rgba(20,8,12,0.65)', borderRadius: '0 0 60% 60%' };
-
-    const eye = { width: '16%', height: '16%', borderRadius: '50%', background: 'rgba(20,8,12,0.9)' };
-
-    return (
-        <div style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', opacity }}>
-            <div style={{
-                position: 'relative', width: '86%', aspectRatio: '1 / 1.05',
-                borderRadius: '46% 46% 48% 48% / 52% 52% 46% 46%',
-                background: `radial-gradient(circle at 38% 32%, ${hexToRgba(c, 1)}, ${hexToRgba(c, 0.78)} 70%)`,
-                boxShadow: `0 6px 18px ${hexToRgba(c, 0.45)}, inset 0 -6px 12px rgba(0,0,0,0.18)`,
-                animation: 'petBob 2.6s ease-in-out infinite',
-            }}>
-                {/* little ears */}
-                <span style={{ position: 'absolute', top: '-12%', left: '16%', width: '22%', height: '26%', background: c, borderRadius: '50% 50% 0 0', transform: 'rotate(-18deg)' }} />
-                <span style={{ position: 'absolute', top: '-12%', right: '16%', width: '22%', height: '26%', background: c, borderRadius: '50% 50% 0 0', transform: 'rotate(18deg)' }} />
-                {/* eyes (blink together) */}
-                <div style={{ position: 'absolute', top: '34%', left: 0, right: 0, display: 'flex', justifyContent: 'center', gap: '20%', animation: 'petBlink 4s ease-in-out infinite' }}>
-                    <span style={eye} />
-                    <span style={eye} />
-                </div>
-                {/* mouth */}
-                <div style={{ position: 'absolute', top: '58%', left: '50%', transform: 'translateX(-50%)', boxSizing: 'border-box', ...mouth }} />
-            </div>
         </div>
     );
 };
@@ -774,9 +737,11 @@ const ElementRenderer = ({ element, onUploadLogo, editMode, theme = DEFAULT_THEM
         );
     }
 
-    // ── Channel pet ── mascot mirroring the mood-ring
+    // ── Channel pet ── mascot mirroring the mood-ring; optionally roaming
     if (type === 'pet') {
-        return <PetElement mood={getMood(mood)} opacity={opacity} />;
+        return resolved.walk
+            ? <WalkingPet species={resolved.species} mood={getMood(mood)} opacity={opacity} speed={resolved.speed} />
+            : <PetMascot species={resolved.species} mood={getMood(mood)} opacity={opacity} />;
     }
 
     // ── Decision wheel ── spin-to-pick from a list of options

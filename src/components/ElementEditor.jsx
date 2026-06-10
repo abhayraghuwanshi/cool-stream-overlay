@@ -1,7 +1,8 @@
 import { RefreshCw, Upload, X } from 'lucide-react';
 import { useRef } from 'react';
 import { hexToRgba } from './ElementRenderer';
-import { MOODS } from '../theme/moods';
+import { MOODS, DEFAULT_MOOD } from '../theme/moods';
+import { PETS, DEFAULT_PET, PetMascot } from './pets';
 
 // Quick sticky-note swatches — each pairs a paper colour with readable dark ink.
 const NOTE_PAPERS = [
@@ -326,11 +327,70 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                 </>
             )}
 
-            {/* ── Pet: follows the mood-ring ── */}
+            {/* ── Pet: pick a species; expression follows the mood-ring ── */}
             {type === 'pet' && (
                 <>
+                    <Group label="Pet">
+                        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: 6, width: '100%' }}>
+                            {PETS.map(p => {
+                                const active = (element.species ?? DEFAULT_PET) === p.id;
+                                return (
+                                    <button
+                                        key={p.id}
+                                        onClick={() => set('species', p.id)}
+                                        title={p.label}
+                                        style={{
+                                            display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 3,
+                                            padding: '6px 2px 4px', cursor: 'pointer', borderRadius: 8,
+                                            border: `1px solid ${active ? 'rgba(99,102,241,0.7)' : 'rgba(255,255,255,0.1)'}`,
+                                            background: active ? 'rgba(99,102,241,0.18)' : 'rgba(255,255,255,0.04)',
+                                        }}
+                                    >
+                                        <div style={{ width: 34, height: 34, pointerEvents: 'none' }}>
+                                            <PetMascot species={p.id} mood={DEFAULT_MOOD} animate={false} />
+                                        </div>
+                                        <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: active ? '#a5b4fc' : 'rgba(255,255,255,0.45)' }}>
+                                            {p.label}
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        </div>
+                    </Group>
+                    <Group label="Movement">
+                        <ToggleBtn
+                            active={!element.walk}
+                            onClick={() => onChange({ walk: false })}
+                            title="Pet stays put in its box"
+                        >
+                            Stay
+                        </ToggleBtn>
+                        <ToggleBtn
+                            active={!!element.walk}
+                            title="Pet roams a full-width floor lane"
+                            onClick={() => onChange({
+                                walk: true,
+                                // Expand the box into a full-width lane so the pet has room to
+                                // roam (the box clips, so a small box would hide the walking).
+                                box: { x: 0, y: element.box?.y ?? 80, w: 100, h: element.box?.h ?? 16 },
+                            })}
+                        >
+                            Walk
+                        </ToggleBtn>
+                    </Group>
+                    {element.walk && (
+                        <Group label="Speed">
+                            {['slow', 'medium', 'fast'].map(s => (
+                                <ToggleBtn key={s} active={(element.speed ?? 'medium') === s} onClick={() => set('speed', s)} title={`Walk ${s}`}>
+                                    {s.charAt(0).toUpperCase() + s.slice(1)}
+                                </ToggleBtn>
+                            ))}
+                        </Group>
+                    )}
                     <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
-                        The pet's expression follows the Mood-ring. Add a Mood-ring element to control it; otherwise it stays chill. Resize via the box on canvas.
+                        {element.walk
+                            ? 'The pet roams a full-width lane, walking, turning, and pausing. Drag the lane up/down to set the floor; resize its height to set the pet size.'
+                            : "The pet's expression follows the Mood-ring. Add a Mood-ring element to control it; otherwise it stays chill. Resize via the box on canvas."}
                     </div>
                     <Divider />
                 </>
