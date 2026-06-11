@@ -1,17 +1,27 @@
 import { motion } from 'framer-motion';
-import { Check, Plus, Trash2, X } from 'lucide-react';
+import { Check, ChevronLeft, ChevronRight, Plus, Trash2, X } from 'lucide-react';
 import { useState } from 'react';
 import { bgToStyle } from './BackgroundPanel';
-import { starterPreview } from '../scenes/starterLayouts';
 
 // Layouts gallery — each card is a LAYOUT (a "show": a named container of
 // scenes). Switching a layout makes it active and loads its active scene.
-// Thumbnails are lightweight wireframes of the layout's active scene, drawn
-// from its percentage coordinates (no screenshotting).
+// Thumbnails are lightweight wireframes drawn from percentage coordinates (no
+// screenshotting); ‹ › on the card flips through every scene in the layout.
 
 const BOX_COLORS = {
     faceCam: '#8b5cf6', handCam: '#a78bfa', roomCam: '#c4b5fd',
     aiCompanion: '#10b981', currentTask: '#f59e0b',
+};
+
+// Wireframe tint per element type — mirrors the Add-palette colors so a scene's
+// thumbnail hints at what's inside it instead of reading as uniform pink.
+const EL_COLORS = {
+    text: '#ec4899', lowerthird: '#f97316', logo: '#06b6d4', clock: '#84cc16',
+    countdown: '#14b8a6', frame: '#818cf8', live: '#ef4444', social: '#0ea5e9',
+    goal: '#22c55e', liquidgoal: '#0ea5e9', pomodoro: '#f87171', moodring: '#38bdf8',
+    pet: '#fbbf24', wheel: '#a855f7', note: '#fcd34d', daycounter: '#fb923c', ticker: '#34d399',
+    shape: '#8b5cf6', circle: '#6366f1', divider: '#6b7280', triangle: '#f43f5e',
+    diamond: '#06b6d4', hexagon: '#eab308', star: '#f59e0b',
 };
 
 const Thumb = ({ snapshot = {} }) => {
@@ -36,15 +46,72 @@ const Thumb = ({ snapshot = {} }) => {
                     }} />
                 );
             })}
-            {els.map((e) => (
-                <div key={e.id} style={{
-                    position: 'absolute', left: `${e.box.x}%`, top: `${e.box.y}%`, width: `${e.box.w}%`, height: `${e.box.h}%`,
-                    background: 'rgba(236,72,153,0.16)', border: '1px solid rgba(236,72,153,0.7)', borderRadius: 2,
-                }} />
-            ))}
+            {els.map((e) => {
+                const c = EL_COLORS[e.type] ?? '#ec4899';
+                return (
+                    <div key={e.id} style={{
+                        position: 'absolute', left: `${e.box.x}%`, top: `${e.box.y}%`, width: `${e.box.w}%`, height: `${e.box.h}%`,
+                        background: `${c}26`, border: `1px solid ${c}b3`, borderRadius: 2,
+                    }} />
+                );
+            })}
             {present.length === 0 && els.length === 0 && (
                 <div style={{ position: 'absolute', inset: 0, display: 'flex', alignItems: 'center', justifyContent: 'center', color: 'rgba(255,255,255,0.2)', fontSize: 9, fontFamily: 'monospace' }}>empty</div>
             )}
+        </div>
+    );
+};
+
+const PagerBtn = ({ onClick, title, children }) => (
+    <button
+        onClick={onClick}
+        title={title}
+        style={{
+            width: 17, height: 17, display: 'flex', alignItems: 'center', justifyContent: 'center',
+            borderRadius: 4, padding: 0, cursor: 'pointer',
+            background: 'rgba(255,255,255,0.12)', border: '1px solid rgba(255,255,255,0.18)',
+            color: 'rgba(255,255,255,0.85)', transition: 'background 0.1s',
+        }}
+        onMouseEnter={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.25)'; }}
+        onMouseLeave={e => { e.currentTarget.style.background = 'rgba(255,255,255,0.12)'; }}
+    >
+        {children}
+    </button>
+);
+
+// Thumbnail with a scene pager — shows one scene's wireframe at a time and lets
+// you flip through every scene in the layout without opening it. Clicking the
+// thumbnail itself still triggers the card action (open / add).
+const ScenePreview = ({ scenes = [], startIndex = 0, onOpen, openTitle, children }) => {
+    const [idx, setIdx] = useState(startIndex);
+    const n = scenes.length;
+    const i = n > 0 ? Math.min(Math.max(idx, 0), n - 1) : 0;
+    const scene = scenes[i];
+    const step = (d) => setIdx(((i + d) % n + n) % n);
+
+    return (
+        <div style={{ position: 'relative', cursor: onOpen ? 'pointer' : 'default' }} onClick={onOpen} title={openTitle}>
+            <Thumb snapshot={scene?.snapshot} />
+            {/* Scene strip: name + ‹ i/n › pager over a bottom scrim */}
+            <div style={{
+                position: 'absolute', left: 0, right: 0, bottom: 0,
+                display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 4,
+                padding: '12px 5px 4px',
+                background: 'linear-gradient(transparent, rgba(0,0,0,0.78))',
+                borderRadius: '0 0 8px 8px',
+            }}>
+                <span style={{ fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: 'rgba(255,255,255,0.8)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                    {scene?.name ?? '—'}
+                </span>
+                {n > 1 && (
+                    <span style={{ display: 'flex', alignItems: 'center', gap: 3, flexShrink: 0 }} onClick={e => e.stopPropagation()}>
+                        <PagerBtn onClick={() => step(-1)} title="Previous scene"><ChevronLeft size={11} /></PagerBtn>
+                        <span style={{ fontSize: 8, fontFamily: 'monospace', color: 'rgba(255,255,255,0.55)', minWidth: 20, textAlign: 'center' }}>{i + 1}/{n}</span>
+                        <PagerBtn onClick={() => step(1)} title="Next scene"><ChevronRight size={11} /></PagerBtn>
+                    </span>
+                )}
+            </div>
+            {children}
         </div>
     );
 };
@@ -75,9 +142,9 @@ const LayoutCard = ({ layout, active, onSwitch, onRename, onDelete }) => {
 
     const commitName = () => { onRename(layout.id, name); setEditing(false); };
 
-    // Thumbnail = this layout's active scene (or first scene).
+    // Pager starts on this layout's active scene (or the first one).
     const scenes = layout.scenes ?? [];
-    const scene = scenes.find(s => s.id === layout.activeSceneId) ?? scenes[0];
+    const startIndex = Math.max(0, scenes.findIndex(s => s.id === layout.activeSceneId));
 
     return (
         <div style={{
@@ -85,14 +152,13 @@ const LayoutCard = ({ layout, active, onSwitch, onRename, onDelete }) => {
             background: active ? 'rgba(99,102,241,0.12)' : 'rgba(255,255,255,0.03)',
             border: `1px solid ${active ? 'rgba(99,102,241,0.5)' : 'rgba(255,255,255,0.07)'}`,
         }}>
-            <div style={{ cursor: 'pointer', position: 'relative' }} onClick={() => onSwitch(layout.id)} title="Open this layout">
-                <Thumb snapshot={scene?.snapshot} />
+            <ScenePreview scenes={scenes} startIndex={startIndex} onOpen={() => onSwitch(layout.id)} openTitle="Open this layout">
                 {active && (
                     <span style={{ position: 'absolute', top: 5, right: 5, display: 'flex', alignItems: 'center', gap: 3, background: 'rgba(79,70,229,0.85)', borderRadius: 5, padding: '2px 6px', fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: '#fff' }}>
                         <Check size={9} /> Active
                     </span>
                 )}
-            </div>
+            </ScenePreview>
 
             {editing ? (
                 <input
@@ -140,12 +206,11 @@ const StarterCard = ({ starter, onAdd }) => (
         display: 'flex', flexDirection: 'column', gap: 7, padding: 8, borderRadius: 10,
         background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
     }}>
-        <div style={{ position: 'relative', cursor: 'pointer' }} onClick={() => onAdd(starter)} title="Add this starter layout">
-            <Thumb snapshot={starterPreview(starter)} />
+        <ScenePreview scenes={starter.scenes} onOpen={() => onAdd(starter)} openTitle="Add this starter layout">
             <span style={{ position: 'absolute', top: 5, left: 5, background: 'rgba(16,185,129,0.85)', borderRadius: 5, padding: '2px 6px', fontSize: 8, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 0.5, color: '#fff' }}>
                 Starter
             </span>
-        </div>
+        </ScenePreview>
         <div style={{ display: 'flex', flexDirection: 'column', gap: 2 }}>
             <span style={{ fontSize: 12, color: 'rgba(255,255,255,0.85)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                 {starter.name}

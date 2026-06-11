@@ -54,6 +54,12 @@ const ELEMENT_TYPES = [
     )},
     { type: 'clock',      label: 'Clock',      color: '#84cc16', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#84cc16', letterSpacing: -0.5 }}>00:00</span> },
     { type: 'countdown',  label: 'Countdown',  color: '#14b8a6', preview: <span style={{ fontSize: 9, fontFamily: 'monospace', color: '#14b8a6', letterSpacing: -0.5 }}>05:00</span> },
+    { type: 'daycounter', label: 'Day Counter', color: '#fb923c', preview: (
+        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', lineHeight: 1 }}>
+            <span style={{ fontSize: 6, fontFamily: 'monospace', color: 'rgba(251,146,60,0.7)', letterSpacing: 1 }}>DAY</span>
+            <span style={{ fontSize: 13, fontWeight: 900, color: '#fb923c' }}>42</span>
+        </span>
+    )},
     { type: 'frame',      label: 'Cam Frame',  color: '#818cf8', preview: <span style={{ width: 20, height: 14, border: '2px solid #818cf8', borderRadius: 3, display: 'block', boxShadow: '0 0 4px #818cf8' }} /> },
     { type: 'live',       label: 'Live Badge', color: '#ef4444', preview: (
         <span style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
@@ -112,6 +118,13 @@ const ELEMENT_TYPES = [
             <span style={{ position: 'absolute', top: 3, left: 2.5, right: 2.5, height: 1.5, background: 'rgba(58,47,16,0.55)', display: 'block' }} />
             <span style={{ position: 'absolute', top: 6.5, left: 2.5, right: 5, height: 1.5, background: 'rgba(58,47,16,0.55)', display: 'block' }} />
             <span style={{ position: 'absolute', right: 0, bottom: 0, width: 0, height: 0, borderStyle: 'solid', borderWidth: '0 0 5px 5px', borderColor: 'transparent transparent rgba(0,0,0,0.18) transparent' }} />
+        </span>
+    )},
+    { type: 'ticker',     label: 'Ticker',     color: '#34d399', preview: (
+        <span style={{ width: 28, height: 11, borderRadius: 2, border: '1px solid rgba(52,211,153,0.5)', display: 'flex', alignItems: 'center', gap: 2.5, padding: '0 2px', overflow: 'hidden', boxSizing: 'border-box' }}>
+            <span style={{ width: 10, height: 2.5, background: '#34d399', borderRadius: 2, flexShrink: 0 }} />
+            <span style={{ width: 2.5, height: 2.5, background: 'rgba(52,211,153,0.5)', borderRadius: '50%', flexShrink: 0 }} />
+            <span style={{ width: 12, height: 2.5, background: '#34d399', borderRadius: 2, flexShrink: 0 }} />
         </span>
     )},
 

@@ -195,8 +195,8 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
     const { type } = element;
     const isClipShape = ['triangle', 'diamond', 'hexagon', 'star'].includes(type);
     const isMoodEl = ['moodring', 'pet'].includes(type);
-    const isText = ['text', 'lowerthird', 'clock', 'countdown', 'live', 'social', 'pomodoro'].includes(type);
-    const isAutoText = ['clock', 'countdown', 'pomodoro'].includes(type); // auto-generated content, no free text input
+    const isText = ['text', 'lowerthird', 'clock', 'countdown', 'live', 'social', 'pomodoro', 'daycounter', 'ticker'].includes(type);
+    const isAutoText = ['clock', 'countdown', 'pomodoro', 'daycounter', 'ticker'].includes(type); // content handled by custom controls (or auto-generated), no generic text input
 
     const handleLogoUpload = (e) => {
         const file = e.target.files?.[0];
@@ -264,6 +264,42 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                     />
                     <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>sec</span>
                 </Group>
+            )}
+
+            {/* ── Day counter: day number + labels ── */}
+            {type === 'daycounter' && (
+                <>
+                    <Group label="Day">
+                        <NumberInput value={element.day ?? 1} onChange={v => set('day', Math.max(0, v))} min={0} max={99999} style={{ width: 64 }} />
+                        <ToggleBtn active={false} onClick={() => set('day', Math.max(0, (element.day ?? 1) + 1))} title="Bump to the next day">+1 day</ToggleBtn>
+                    </Group>
+                    <Group label="Label">
+                        <TextInput value={element.prefix ?? 'DAY'} onChange={v => set('prefix', v)} placeholder="DAY" style={{ width: 80 }} />
+                    </Group>
+                    <Group label="Caption">
+                        <TextInput value={element.content} onChange={v => set('content', v)} placeholder="#100DaysOfCode" style={{ width: 160 }} />
+                    </Group>
+                </>
+            )}
+
+            {/* ── Ticker: messages + scroll speed ── */}
+            {type === 'ticker' && (
+                <>
+                    <div style={{ width: '100%' }}>
+                        <Label>Messages</Label>
+                        <TextArea value={element.content} onChange={v => set('content', v)} placeholder="One message per line…" rows={4} />
+                    </div>
+                    <Group label="Speed">
+                        {['slow', 'medium', 'fast'].map(s => (
+                            <ToggleBtn key={s} active={(element.speed ?? 'medium') === s} onClick={() => set('speed', s)} title={`Scroll ${s}`}>
+                                {s.charAt(0).toUpperCase() + s.slice(1)}
+                            </ToggleBtn>
+                        ))}
+                    </Group>
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Each line is a message; they loop with a • between them.
+                    </div>
+                </>
             )}
 
             {/* ── LIVE badge: dot colour + pulse ── */}

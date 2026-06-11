@@ -169,6 +169,19 @@ export const defaultElement = (type, theme = DEFAULT_THEME) => {
             fontSize: 16, tilt: -3,
             box: { x: 74, y: 8, w: 20, h: 26 },
         },
+        daycounter: {
+            content: '#100DaysOfCode', day: 1, prefix: 'DAY',
+            fontSize: 52, fontColor: T.textColor, bold: true,
+            bgColor: '#000000', bgOpacity: 0,
+            box: { x: 3, y: 4, w: 13, h: 18 },
+        },
+        ticker: {
+            content: 'Welcome to the stream!\nDrop a follow if you like the vibe\n!discord to hang out',
+            fontSize: 18, fontColor: T.textColor, bold: false,
+            speed: 'medium',
+            bgColor: T.panelColor, bgOpacity: 0.75,
+            box: { x: 0, y: 93, w: 100, h: 7 },
+        },
     };
 
     return { ...base, ...(overrides[type] ?? {}) };
@@ -322,6 +335,79 @@ const PomodoroElement = ({ element }) => {
             <span style={{ fontSize: Math.max(9, (element.fontSize ?? 40) * 0.3), letterSpacing: 1 }}>
                 {count > 0 ? '🍅'.repeat(Math.min(count, 8)) + (count > 8 ? ` ${count}` : '') : ''}
             </span>
+        </div>
+    );
+};
+
+// ── Scrolling ticker sub-component (self-animating) ────────────────────────
+// A news-style marquee. Each line of `content` is one message; messages are
+// joined with a dot separator, repeated enough times to cover the box, and the
+// whole strip is duplicated so a -50% translate loops seamlessly (same trick
+// as the liquid-goal waves). Duration derives from the measured unit width so
+// the px/sec speed stays constant across box sizes and canvas widths (editor
+// panel vs full-width OBS browser source).
+const TICKER_SPEEDS = { slow: 45, medium: 90, fast: 160 };   // px per second
+
+const TickerElement = ({ element, T }) => {
+    const msgs = String(element.content || 'Your message here')
+        .split('\n').map(s => s.trim()).filter(Boolean);
+    const pxPerSec = TICKER_SPEEDS[element.speed] ?? TICKER_SPEEDS.medium;
+
+    const wrapRef = useRef(null);
+    const unitRef = useRef(null);
+    const [repeat, setRepeat] = useState(1);
+    const [duration, setDuration] = useState(0);
+
+    useLayoutEffect(() => {
+        const fit = () => {
+            const wrap = wrapRef.current, unit = unitRef.current;
+            if (!wrap || !unit) return;
+            const unitW = unit.scrollWidth, boxW = wrap.clientWidth;
+            if (unitW <= 0 || boxW <= 0) return;
+            // Enough units to cover the box, plus one spare so the wrap point
+            // is never on screen.
+            const n = Math.ceil(boxW / unitW) + 1;
+            setRepeat(n);
+            setDuration((unitW * n) / pxPerSec);
+        };
+        fit();
+        const ro = new ResizeObserver(fit);
+        if (wrapRef.current) ro.observe(wrapRef.current);
+        return () => ro.disconnect();
+    }, [element.content, element.fontSize, element.bold, element.italic, element.letterSpacing, pxPerSec]);
+
+    const unit = msgs.map((m, i) => (
+        <span key={i}>
+            {m}
+            <span style={{ margin: '0 0.9em', opacity: 0.45 }}>•</span>
+        </span>
+    ));
+
+    const copyStyle = {
+        display: 'inline-flex', alignItems: 'center', flexShrink: 0,
+        whiteSpace: 'pre',
+        fontSize: element.fontSize,
+        color: element.fontColor,
+        fontWeight: element.bold ? 'bold' : 'normal',
+        fontStyle: element.italic ? 'italic' : 'normal',
+        letterSpacing: element.letterSpacing || 0,
+        fontFamily: T.fontFamily,
+        textShadow: (element.bgOpacity ?? 0) > 0 ? 'none' : '0 2px 8px rgba(0,0,0,0.6)',
+    };
+
+    return (
+        <div ref={wrapRef} style={{ width: '100%', height: '100%', display: 'flex', alignItems: 'center', overflow: 'hidden' }}>
+            <div style={{ display: 'flex', flexShrink: 0, animation: duration > 0 ? `tickerScroll ${duration}s linear infinite` : 'none', willChange: 'transform' }}>
+                {[0, 1].map(copy => (
+                    <span key={copy} style={copyStyle}>
+                        {Array.from({ length: repeat }, (_, i) => (
+                            <span key={i} ref={copy === 0 && i === 0 ? unitRef : undefined} style={{ display: 'inline-flex', alignItems: 'center' }}>
+                                {unit}
+                            </span>
+                        ))}
+                    </span>
+                ))}
+            </div>
         </div>
     );
 };
@@ -605,6 +691,39 @@ const ElementRenderer = ({ element, onUploadLogo, editMode, theme = DEFAULT_THEM
         return (
             <div style={{ ...outerStyle, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
                 <CountdownElement element={resolved} />
+            </div>
+        );
+    }
+
+    // ── Day counter ── "DAY 42" streak badge for challenge runs
+    if (type === 'daycounter') {
+        const day = Math.max(0, Math.floor(element.day ?? 1));
+        const prefix = element.prefix ?? 'DAY';
+        const shadow = bgOpacity > 0 ? 'none' : '0 2px 10px rgba(0,0,0,0.7)';
+        return (
+            <div style={{ ...outerStyle, display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', padding: 4 }}>
+                {prefix && (
+                    <span style={{ fontSize: Math.max(8, fontSize * 0.26), color: fontColor, opacity: 0.75, fontFamily: T.fontFamily, textTransform: 'uppercase', letterSpacing: 3, textShadow: shadow, lineHeight: 1.2 }}>
+                        {prefix}
+                    </span>
+                )}
+                <span style={{ fontSize, color: fontColor, fontWeight: bold ? 'bold' : 'normal', fontStyle: italic ? 'italic' : 'normal', fontFamily: T.fontFamily, fontVariantNumeric: 'tabular-nums', lineHeight: 1.05, textShadow: shadow }}>
+                    {day}
+                </span>
+                {content && (
+                    <span style={{ fontSize: Math.max(8, fontSize * 0.22), color: fontColor, opacity: 0.7, fontFamily: T.fontFamily, letterSpacing: 0.5, textShadow: shadow, lineHeight: 1.2, textAlign: 'center' }}>
+                        {content}
+                    </span>
+                )}
+            </div>
+        );
+    }
+
+    // ── Scrolling ticker ── looping marquee of messages
+    if (type === 'ticker') {
+        return (
+            <div style={outerStyle}>
+                <TickerElement element={resolved} T={T} />
             </div>
         );
     }

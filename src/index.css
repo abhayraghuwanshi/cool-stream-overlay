@@ -12,6 +12,13 @@
   to   { transform: translateX(-50%); }
 }
 
+/* Scrolling ticker — the strip holds two identical copies of the message run,
+   so sliding -50% loops seamlessly. */
+@keyframes tickerScroll {
+  from { transform: translateX(0); }
+  to   { transform: translateX(-50%); }
+}
+
 /* Channel pet idle: a gentle bob and periodic blink. */
 @keyframes petBob {
   0%, 100% { transform: translateY(0); }

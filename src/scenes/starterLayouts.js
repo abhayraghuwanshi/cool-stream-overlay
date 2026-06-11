@@ -403,9 +403,6 @@ export const STARTER_LAYOUTS = [
     },
 ];
 
-// Snapshot used to draw a starter's gallery thumbnail (its first scene).
-export const starterPreview = (starter) => starter.scenes[0]?.snapshot ?? {};
-
 // Build a real layout container from a starter. Ids are stamped per-call so
 // adding the same starter twice never collides with an existing layout/scene.
 export const buildStarterLayout = (starter) => {
