@@ -77,6 +77,21 @@ Empty the custom css box.
 6. The overlay will immediately load. It is designed to be fully transparent and perfectly match a 1920x1080 canvas. Do not resize the bounds manually.
 7. To interact with the Settings or cameras, right-click the Browser source in OBS and select **Interact**. A secondary window will appear allowing you to click the Settings gear icon and manage the AI.
 
+## Camera Auto-Placement (OBS WebSocket)
+
+The overlay can move your real OBS camera source into the camera frame for you — every time you switch a scene or layout, the camera snaps into the frame (circle or rectangle) automatically, and is hidden on scenes that don't use a cam. No more manual repositioning.
+
+To enable it, turn on the WebSocket server inside OBS (one-time setup):
+
+1. In OBS, open **Tools → WebSocket Server Settings**.
+2. Check **Enable WebSocket server**.
+3. Keep the port at **4455** and **uncheck Enable Authentication**.
+4. Click **OK**. The overlay connects automatically within a few seconds — the camera panel in the editor shows a green "OBS connected" badge once it does.
+
+Notes:
+- Your webcam must be a native **Video Capture Device** source placed in the same OBS scene as the overlay (behind it).
+- With multiple cameras, name your OBS sources with "face", "hand", or "room" to control which frame each one fills; otherwise they're assigned in that order.
+
 ## Managing AI Models
 
 Instead of dealing with massive terminal scripts, the **Settings Widget** (click the gear icon in the top right of the overlay via OBS "Interact") provides a visual GUI to manage your LLMs:

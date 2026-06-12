@@ -136,7 +136,7 @@ const useIsNarrow = (bp = 760) => {
 };
 
 const OverlayLayout = () => {
-    const { isRecording, isConnected } = useOBS();
+    const { isRecording, isConnected, placeCameras } = useOBS();
     const canvasRef = useRef(null);
 
     // ── Boxes are separate state so dragging never re-renders the rest of the overlay ──
@@ -156,6 +156,10 @@ const OverlayLayout = () => {
         theme: DEFAULT_THEME,
         scenes: [],
     });
+    // Live mirror of camera visibility for callbacks that auto-place the native
+    // OBS camera sources without re-creating on every settings change.
+    const visRef = useRef(DEFAULT_VISIBILITY);
+    visRef.current = layoutSettings.boxVisibility ?? DEFAULT_VISIBILITY;
 
     // ── Responsive editor ── on narrow phones the side panels become overlays.
     const isNarrow = useIsNarrow();
@@ -261,22 +265,25 @@ const OverlayLayout = () => {
         const updated = { ...boxesRef.current, [id]: newBox };
         boxesRef.current = updated;
         setBoxes(updated);
+        // Dragging a cam frame also re-pins the native OBS camera source to it.
+        if (CAMERA_IDS.includes(id)) placeCameras(updated, visRef.current);
         fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ boxes: updated, _clientId: SESSION_ID }),
         }).catch(console.error);
-    }, []);
+    }, [placeCameras]);
 
     const resetLayout = useCallback(() => {
         boxesRef.current = DEFAULT_BOXES;
         setBoxes(DEFAULT_BOXES);
+        placeCameras(DEFAULT_BOXES, visRef.current);
         fetch(layoutUrl(), {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ boxes: DEFAULT_BOXES, _clientId: SESSION_ID }),
         }).catch(console.error);
-    }, []);
+    }, [placeCameras]);
 
     // ── Scenes ───────────────────────────────────────────────────────────────
     // A scene snapshot = { boxes, boxVisibility, elements, background, zOrder }.
@@ -298,6 +305,9 @@ const OverlayLayout = () => {
         setZOrder(nZ);
         setSelectedBox(null);
         setSelectedElementId(null);
+        // Snap the native OBS camera sources into this scene's cam frames (and
+        // hide them on scenes that don't use a cam). No-op if OBS isn't connected.
+        placeCameras(nBoxes, nVis);
         setLayoutSettings(s => ({
             ...s,
             elements: nEls,
@@ -320,7 +330,7 @@ const OverlayLayout = () => {
                 _clientId: SESSION_ID,
             }),
         }).catch(console.error);
-    }, []);
+    }, [placeCameras]);
 
     // Installing a pack applies its theme + signature scene in one shot.
     const installPack = useCallback((pack) => applyScene(packSnapshot(pack)), [applyScene]);
@@ -630,6 +640,9 @@ const OverlayLayout = () => {
     // it true (and selects it); removing sets it false (taking it off the
     // canvas and out of the layers list).
     const setBuiltinVisible = useCallback((id, value) => {
+        // Adding/removing a cam box also shows/places or hides the matching
+        // native OBS camera source.
+        if (CAMERA_IDS.includes(id)) placeCameras(boxesRef.current, { ...visRef.current, [id]: value });
         setLayoutSettings(s => {
             const bv = s.boxVisibility ?? DEFAULT_VISIBILITY;
             const updates = { boxVisibility: { ...bv, [id]: value } };
@@ -643,7 +656,7 @@ const OverlayLayout = () => {
             }).catch(console.error);
             return { ...s, ...updates };
         });
-    }, []);
+    }, [placeCameras]);
 
     const addBuiltin = useCallback((id) => {
         setBuiltinVisible(id, true);

@@ -2,6 +2,7 @@
 // live in the Layers panel; it moved here so each camera shows up only once
 // in the unified layers list.
 
+import { useOBS } from '../context/OBSContext';
 import { CAMERA_FRAMES } from './CameraFrame';
 
 const Label = ({ children }) => (
@@ -30,6 +31,7 @@ const FramePreview = ({ id, accent }) => {
 const PRESET_ACCENTS = ['#6366f1', '#22d3ee', '#ec4899', '#f59e0b', '#22c55e', '#ffffff'];
 
 const CameraEditor = ({ slot, camStyle = {}, onChangeCamStyle }) => {
+    const { isConnected } = useOBS();
     const frame = camStyle.frame ?? 'soft';
     const accent = camStyle.accent ?? '#6366f1';
     const radius = camStyle.radius ?? 14;
@@ -55,14 +57,36 @@ const CameraEditor = ({ slot, camStyle = {}, onChangeCamStyle }) => {
                 </div>
             </div>
 
-            {/* OBS source hint — the real webcam is a native OBS source behind this frame */}
-            <div style={{
-                fontSize: 9, fontFamily: 'monospace', lineHeight: 1.5, color: 'rgba(255,255,255,0.4)',
-                background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
-                borderRadius: 6, padding: '7px 9px',
-            }}>
-                This is a frame placeholder. Add your webcam as a native OBS “Video Capture Device” source and place it <em>behind</em> this overlay, aligned inside the frame.
-            </div>
+            {/* OBS source hint — the real webcam is a native OBS source behind this
+                frame. When the OBS WebSocket is connected we auto-place that source
+                into the frame; otherwise tell the user how to enable it. */}
+            {isConnected ? (
+                <div style={{
+                    fontSize: 9, fontFamily: 'monospace', lineHeight: 1.5, color: 'rgba(134,239,172,0.8)',
+                    background: 'rgba(34,197,94,0.08)', border: '1px solid rgba(34,197,94,0.25)',
+                    borderRadius: 6, padding: '7px 9px',
+                }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e', flexShrink: 0 }} />
+                        OBS connected — auto-place on
+                    </span>
+                    <br />
+                    Your OBS camera source snaps into this frame automatically when you move it or switch scenes. Scenes without a cam hide it.
+                </div>
+            ) : (
+                <div style={{
+                    fontSize: 9, fontFamily: 'monospace', lineHeight: 1.5, color: 'rgba(253,224,71,0.75)',
+                    background: 'rgba(234,179,8,0.07)', border: '1px solid rgba(234,179,8,0.25)',
+                    borderRadius: 6, padding: '7px 9px',
+                }}>
+                    <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontWeight: 700, textTransform: 'uppercase', letterSpacing: 1, marginBottom: 3 }}>
+                        <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#eab308', flexShrink: 0 }} />
+                        OBS not connected
+                    </span>
+                    <br />
+                    Add your webcam as an OBS “Video Capture Device” source behind this overlay. To have it <em>auto-placed</em> into this frame on every scene switch, enable the OBS WebSocket server: <span style={{ color: 'rgba(255,255,255,0.75)' }}>Tools → WebSocket Server Settings → Enable WebSocket server</span>, port <span style={{ color: 'rgba(255,255,255,0.75)' }}>4455</span>, authentication off — the overlay connects automatically.
+                </div>
+            )}
 
             <div style={{ height: 1, background: 'rgba(255,255,255,0.08)' }} />
 
