@@ -1,4 +1,4 @@
-import { useEffect, useLayoutEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AtSign, Globe, Instagram, MessageCircle, Music2, Twitch, Twitter, Youtube } from 'lucide-react';
 import { DEFAULT_THEME, resolveElement } from '../theme/themes';
 import { getMood } from '../theme/moods';
@@ -433,7 +433,7 @@ const wheelSlice = (r, startA, endA) => {
 };
 const clip = (s, n) => (String(s).length > n ? String(s).slice(0, n - 1) + '…' : String(s));
 
-const WheelElement = ({ element, T }) => {
+const WheelElement = ({ element, T, onUpdate }) => {
     const opts = (Array.isArray(element.options) && element.options.length >= 2) ? element.options : ['Yes', 'No'];
     const n = opts.length;
     const seg = 360 / n;
@@ -445,33 +445,73 @@ const WheelElement = ({ element, T }) => {
     const [rotation, setRotation] = useState(0);
     const [spinning, setSpinning] = useState(false);
     const [winnerIdx, setWinnerIdx] = useState(null);
+    // Animation duration of the spin in flight — shorter than spinSec when this
+    // instance picked the spin up late (e.g. the OBS source polled mid-spin).
+    const [animSec, setAnimSec] = useState(spinSec);
     const timer = useRef(null);
+    const lastSpinAt = useRef(0);
+
+    // Animate slice `idx` under the pointer over `durSec` seconds. A stale event
+    // (page just loaded, or the poll arrived after the spin already finished)
+    // skips the animation and just shows the result.
+    const runSpin = useCallback((idx, durSec) => {
+        setWinnerIdx(null);
+        clearTimeout(timer.current);
+        const center = idx * seg + seg / 2;               // angle of the winning slice's middle
+        // offset that brings the winning slice under the pointer
+        const align = (prev) => (((360 - center - (prev % 360)) % 360) + 360) % 360;
+        if (durSec < 0.25) {
+            setSpinning(false);
+            setRotation(prev => prev + align(prev));
+            setWinnerIdx(idx);
+            return;
+        }
+        setSpinning(true);
+        setAnimSec(durSec);
+        setRotation(prev => prev + align(prev) + 360 * 5); // extra turns + alignment
+        timer.current = setTimeout(() => { setSpinning(false); setWinnerIdx(idx); }, durSec * 1000);
+    }, [seg]);
+
+    // The editor window and the OBS browser source are separate app instances
+    // that only share state through the hosted layout store. So a spin is not
+    // run directly: the click publishes { idx, at } onto the element, and every
+    // instance (this one immediately, viewers via their poll) animates it from
+    // this effect. Late joiners animate the remaining time, or snap to the
+    // result if the spin already ended.
+    const spinEvt = element.spin;
+    useEffect(() => {
+        if (!spinEvt || typeof spinEvt.at !== 'number') return;
+        if (spinEvt.at <= lastSpinAt.current) return;     // already played
+        lastSpinAt.current = spinEvt.at;
+        const idx = Math.min(n - 1, Math.max(0, spinEvt.idx | 0));
+        runSpin(idx, spinSec - (Date.now() - spinEvt.at) / 1000);
+    }, [spinEvt, n, spinSec, runSpin]);
 
     const spin = () => {
-        setSpinning(s => {
-            if (s) return s;                              // ignore clicks mid-spin
-            const winIdx = Math.floor(Math.random() * n);
-            const center = winIdx * seg + seg / 2;        // angle of the winning slice's middle
-            setRotation(prev => {
-                // extra turns + the offset that brings the winning slice under the pointer
-                const align = (((360 - center - (prev % 360)) % 360) + 360) % 360;
-                return prev + align + 360 * 5;
-            });
-            setWinnerIdx(null);
-            clearTimeout(timer.current);
-            timer.current = setTimeout(() => { setSpinning(false); setWinnerIdx(winIdx); }, spinSec * 1000);
-            return true;
-        });
+        if (spinning) return;                             // ignore clicks mid-spin
+        const idx = Math.floor(Math.random() * n);
+        if (onUpdate) onUpdate({ spin: { idx, at: Date.now() } });
+        else runSpin(idx, spinSec);                       // no write path (e.g. a preview) — spin locally
     };
 
-    // Optional hands-free auto-spin (e.g. on an OBS browser source).
+    // Optional hands-free auto-spin. Fires at wall-clock slot boundaries with a
+    // winner derived from the slot number, so every instance (editor, OBS)
+    // spins at the same moment to the same result without any store writes.
     useEffect(() => {
         if (!element.auto) return;
-        const every = Math.max(5, element.cycleSec ?? 30) * 1000;
-        const t = setInterval(spin, every);
-        return () => clearInterval(t);
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [element.auto, element.cycleSec, n, spinSec]);
+        const everyMs = Math.max(5, element.cycleSec ?? 30) * 1000;
+        let t;
+        const arm = () => {
+            const now = Date.now();
+            const slot = Math.floor(now / everyMs) + 1;
+            t = setTimeout(() => {
+                runSpin((Math.imul(slot, 2654435761) >>> 13) % n, spinSec);
+                arm();
+            }, slot * everyMs - now);
+        };
+        arm();
+        return () => clearTimeout(t);
+    }, [element.auto, element.cycleSec, n, spinSec, runSpin]);
 
     useEffect(() => () => clearTimeout(timer.current), []);
 
@@ -483,7 +523,7 @@ const WheelElement = ({ element, T }) => {
                 {/* Spinning body */}
                 <g style={{
                     transform: `rotate(${rotation}deg)`, transformBox: 'fill-box', transformOrigin: 'center',
-                    transition: spinning ? `transform ${spinSec}s cubic-bezier(0.16,0.84,0.20,1)` : 'none',
+                    transition: spinning ? `transform ${animSec}s cubic-bezier(0.16,0.84,0.20,1)` : 'none',
                 }}>
                     {opts.map((label, i) => {
                         const startA = i * seg, mid = startA + seg / 2;
@@ -527,7 +567,7 @@ const WheelElement = ({ element, T }) => {
 };
 
 // ── Main renderer ──────────────────────────────────────────────────────────
-const ElementRenderer = ({ element, onUploadLogo, editMode, theme = DEFAULT_THEME, mood = 'chill' }) => {
+const ElementRenderer = ({ element, onUploadLogo, onElementUpdate, editMode, theme = DEFAULT_THEME, mood = 'chill' }) => {
     const T = theme ?? DEFAULT_THEME;
     // Resolve any theme tokens (@accent, @text, @radius…) to concrete values.
     const resolved = resolveElement(element, T);
@@ -865,7 +905,7 @@ const ElementRenderer = ({ element, onUploadLogo, editMode, theme = DEFAULT_THEM
 
     // ── Decision wheel ── spin-to-pick from a list of options
     if (type === 'wheel') {
-        return <WheelElement element={resolved} T={T} />;
+        return <WheelElement element={resolved} T={T} onUpdate={onElementUpdate} />;
     }
 
     // ── Sticky note ── a tilted scrap of paper for freeform jottings

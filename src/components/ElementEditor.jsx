@@ -337,7 +337,7 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                         {MOODS.map(m => (
                             <ToggleBtn
                                 key={m.id}
-                                active={!element.auto && (element.mood ?? 'chill') === m.id}
+                                active={(element.mood ?? 'chill') === m.id}
                                 onClick={() => set('mood', m.id)}
                                 title={m.label}
                             >

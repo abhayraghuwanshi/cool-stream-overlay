@@ -34,9 +34,10 @@ const elementTitle = (type) => type.charAt(0).toUpperCase() + type.slice(1);
 const ElementBox = memo(
     ({
         element, zIndex, selected, editMode, canvasRef, extraStyle, theme, mood,
-        onSelect, onBoxChange, onUploadLogo,
+        onSelect, onBoxChange, onUploadLogo, onElementUpdate,
     }) => {
         const handleUploadLogo = useCallback(() => onUploadLogo(element.id), [element.id, onUploadLogo]);
+        const handleUpdate = useCallback((changes) => onElementUpdate?.(element.id, changes), [element.id, onElementUpdate]);
 
         return (
             <DraggableBox
@@ -51,7 +52,7 @@ const ElementBox = memo(
                 canvasRef={canvasRef}
                 extraStyle={extraStyle}
             >
-                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} theme={theme} mood={mood} />
+                <ElementRenderer element={element} editMode={editMode} onUploadLogo={handleUploadLogo} onElementUpdate={handleUpdate} theme={theme} mood={mood} />
             </DraggableBox>
         );
     },
@@ -66,7 +67,8 @@ const ElementBox = memo(
         prev.mood === next.mood &&
         prev.onSelect === next.onSelect &&
         prev.onBoxChange === next.onBoxChange &&
-        prev.onUploadLogo === next.onUploadLogo
+        prev.onUploadLogo === next.onUploadLogo &&
+        prev.onElementUpdate === next.onElementUpdate
     )
 );
 
@@ -186,6 +188,11 @@ const OverlayLayout = () => {
     // local edits you're making.
     const editModeRef = useRef(editMode);
     editModeRef.current = editMode;
+
+    // "Save Scene" is two-step: the header button swaps in-place for a name
+    // input + save/cancel, so scenes can be named as they're created.
+    const [namingScene, setNamingScene] = useState(false);
+    const [sceneNameDraft, setSceneNameDraft] = useState('');
     const [selectedBox, setSelectedBox] = useState(null);
     const [selectedElementId, setSelectedElementId] = useState(null);
     const [zOrder, setZOrder] = useState(Object.keys(DEFAULT_BOXES));
@@ -806,13 +813,20 @@ const OverlayLayout = () => {
     const moodRingEl = elements.find(e => e.type === 'moodring' && !e.hidden);
     const moodAuto = !!moodRingEl?.auto;
     const moodCycleSec = Math.max(3, moodRingEl?.cycleSec ?? 20);
+    const moodManual = moodRingEl?.mood ?? 'chill';
     const [moodTick, setMoodTick] = useState(0);
     useEffect(() => {
         if (!moodAuto) return;
+        // A manual pick mid-cycle restarts the timer so the chosen mood gets a
+        // full interval before auto-cycle advances past it.
+        setMoodTick(0);
         const id = setInterval(() => setMoodTick(t => t + 1), moodCycleSec * 1000);
         return () => clearInterval(id);
-    }, [moodAuto, moodCycleSec]);
-    const currentMood = moodAuto ? MOODS[moodTick % MOODS.length].id : (moodRingEl?.mood ?? 'chill');
+    }, [moodAuto, moodCycleSec, moodManual]);
+    // Auto-cycle walks MOODS starting from the manually picked mood, so picking
+    // a mood applies immediately even while auto is on.
+    const moodBaseIdx = Math.max(0, MOODS.findIndex(m => m.id === moodManual));
+    const currentMood = moodAuto ? MOODS[(moodBaseIdx + moodTick) % MOODS.length].id : moodManual;
 
     // ── Stable callbacks for tasks ───────────────────────────────────────────
     const onTasksChange = useCallback((t) => updateLayout({ tasks: t }), [updateLayout]);
@@ -939,7 +953,31 @@ const OverlayLayout = () => {
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-                        <HdrBtn onClick={() => saveScene()}><Save size={12} style={{ marginRight: 4 }} />Save Scene</HdrBtn>
+                        {namingScene ? (
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 4 }}>
+                                <input
+                                    autoFocus
+                                    value={sceneNameDraft}
+                                    onChange={(e) => setSceneNameDraft(e.target.value)}
+                                    onKeyDown={(e) => {
+                                        if (e.key === 'Enter') { saveScene(sceneNameDraft); setNamingScene(false); }
+                                        if (e.key === 'Escape') setNamingScene(false);
+                                    }}
+                                    placeholder={`Scene ${(activeLayout?.scenes.length ?? 0) + 1}`}
+                                    style={{
+                                        width: 130, height: 22, padding: '0 8px', borderRadius: 5,
+                                        border: '1px solid rgba(99,102,241,0.45)', background: 'rgba(99,102,241,0.12)',
+                                        color: '#e0e7ff', fontSize: 10, fontFamily: 'monospace', outline: 'none',
+                                    }}
+                                />
+                                <HdrBtn active onClick={() => { saveScene(sceneNameDraft); setNamingScene(false); }}>
+                                    <Check size={12} style={{ marginRight: 4 }} />Save
+                                </HdrBtn>
+                                <HdrBtn onClick={() => setNamingScene(false)}><X size={12} /></HdrBtn>
+                            </div>
+                        ) : (
+                            <HdrBtn onClick={() => { setSceneNameDraft(''); setNamingScene(true); }}><Save size={12} style={{ marginRight: 4 }} />Save Scene</HdrBtn>
+                        )}
                         <HdrBtn onClick={resetLayout}><RotateCcw size={12} style={{ marginRight: 4 }} />Reset</HdrBtn>
                         <HdrSep />
                         <button
@@ -1137,6 +1175,7 @@ const OverlayLayout = () => {
                                 onSelect={selectElement}
                                 onBoxChange={updateElementBox}
                                 onUploadLogo={onUploadLogo}
+                                onElementUpdate={updateElement}
                                 editMode={editMode}
                                 canvasRef={canvasRef}
                                 theme={theme}
