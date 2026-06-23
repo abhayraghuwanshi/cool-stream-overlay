@@ -48,6 +48,11 @@ export function scoresUrl() {
     return `${LAYOUT_API}/scores`;
 }
 
+// Per-room usage counter (api/usage.js). POST to bump, GET ?days= to read.
+export function usageUrl() {
+    return `${LAYOUT_API}/usage`;
+}
+
 // True when no explicit room was chosen — i.e. we're on the shared default slot
 // that every fresh visitor lands on. "Go Live" mints a private room from here.
 export function isDefaultRoom() {

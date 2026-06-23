@@ -1,18 +1,23 @@
 import { createRoot } from 'react-dom/client'
 import { Analytics } from '@vercel/analytics/react'
-import { track } from '@vercel/analytics'
 import './index.css'
 import App from './App.jsx'
-import { getRoom } from './config'
+import { getRoom, usageUrl } from './config'
 
-// One usage event per page load so the Vercel Analytics dashboard can break
-// usage down by room and by surface — the OBS browser source (?obs/?clean) vs
-// the interactive editor page. track() is a no-op in dev / on localhost, so this
-// only reports from the deployed site. (Enable Web Analytics in the Vercel
-// dashboard to see both this and the built-in visitor/page-view counts.)
-const _params = new URLSearchParams(window.location.search)
-const _surface = _params.has('obs') || _params.has('clean') ? 'obs' : 'editor'
-track('overlay_open', { room: getRoom(), surface: _surface })
+// Per-room usage ping (once per page load) into our own KV — Vercel's custom
+// events are Pro-only, so we count loads + unique visitors ourselves for free.
+// A stable per-browser id (localStorage) lets the server tally unique visitors
+// without any personal data. Fire-and-forget; never blocks the app.
+try {
+    let uid = localStorage.getItem('ov_uid')
+    if (!uid) { uid = (crypto.randomUUID?.() || String(Date.now()) + Math.random().toString(36).slice(2)); localStorage.setItem('ov_uid', uid) }
+    fetch(usageUrl(), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ room: getRoom(), uid }),
+        keepalive: true,
+    }).catch(() => {})
+} catch { /* localStorage blocked / SSR — skip */ }
 
 createRoot(document.getElementById('root')).render(
   <>

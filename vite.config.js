@@ -88,6 +88,69 @@ function localScoresApi(token, competition) {
   }
 }
 
+// Dev-only stand-in for api/usage.js — same reason as the others. File-backed
+// (.dev-usage.json) so `npm run dev` counts work offline without touching the
+// production KV; uniques use a plain id set here instead of HyperLogLog.
+function localUsageApi() {
+  const file = path.resolve('.dev-usage.json')
+  const read = () => { try { return JSON.parse(fs.readFileSync(file, 'utf8')) } catch { return { loads: {}, uniq: {}, rooms: [] } } }
+  const write = (d) => { try { fs.writeFileSync(file, JSON.stringify(d, null, 2)) } catch { /* ignore */ } }
+  const clean = (r) => String(r || 'default').slice(0, 64).replace(/[^\w.-]/g, '_')
+  const day = () => new Date().toISOString().slice(0, 10)
+  return {
+    name: 'local-usage-api',
+    configureServer(server) {
+      server.middlewares.use('/api/usage', (req, res, next) => {
+        res.setHeader('Access-Control-Allow-Origin', '*')
+        if (req.method === 'OPTIONS') { res.statusCode = 204; return res.end() }
+        res.setHeader('Content-Type', 'application/json')
+        const store = read()
+        store.loads ??= {}; store.uniq ??= {}; store.rooms ??= []
+
+        if (req.method === 'POST') {
+          let body = ''
+          req.on('data', c => { body += c })
+          req.on('end', () => {
+            let d = {}; try { d = JSON.parse(body || '{}') } catch { /* ignore */ }
+            const room = clean(d.room), today = day()
+            for (const scope of [room, '_all']) {
+              const lk = `${scope}:${today}`
+              store.loads[lk] = (store.loads[lk] || 0) + 1
+              if (d.uid) { store.uniq[lk] ??= []; if (!store.uniq[lk].includes(d.uid)) store.uniq[lk].push(d.uid) }
+            }
+            if (!store.rooms.includes(room)) store.rooms.push(room)
+            write(store)
+            res.end(JSON.stringify({ ok: true }))
+          })
+          return
+        }
+
+        if (req.method === 'GET') {
+          const url = new URL(req.url, 'http://localhost')
+          const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get('days'), 10) || 14))
+          const dates = []
+          for (let i = days - 1; i >= 0; i--) { const dt = new Date(); dt.setUTCDate(dt.getUTCDate() - i); dates.push(dt.toISOString().slice(0, 10)) }
+          const targets = ['_all', ...store.rooms.filter(r => r !== '_all')]
+          const rooms = {}
+          for (const room of targets) {
+            const byDay = {}; let total = 0
+            for (const d of dates) {
+              const lk = `${room}:${d}`
+              const loads = store.loads[lk] || 0
+              byDay[d] = { loads, uniques: (store.uniq[lk] || []).length }
+              total += loads
+            }
+            rooms[room] = { total, byDay }
+          }
+          res.end(JSON.stringify({ days: dates, rooms }))
+          return
+        }
+        next()
+      })
+    },
+  }
+}
+
 // https://vite.dev/config/
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
@@ -96,12 +159,13 @@ export default defineConfig(({ mode }) => {
       react(),
       localLayoutApi(),
       localScoresApi(env.FOOTBALL_DATA_TOKEN, env.FOOTBALL_DATA_COMPETITION || 'WC'),
+      localUsageApi(),
     ],
     server: {
       port: PORTS.FRONTEND,
       strictPort: true, // Fail if port is already in use instead of silently picking another
       watch: {
-        ignored: ['**/backend/layout-settings.json', '**/.dev-layouts.json'],
+        ignored: ['**/backend/layout-settings.json', '**/.dev-layouts.json', '**/.dev-usage.json'],
       },
     },
   }

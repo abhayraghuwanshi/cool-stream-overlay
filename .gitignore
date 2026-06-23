@@ -14,6 +14,7 @@ dist-ssr
 
 # Local dev layout store (Vite dev API shim)
 .dev-layouts.json
+.dev-usage.json
 
 # Editor directories and files
 .vscode/*
