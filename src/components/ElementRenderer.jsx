@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { AtSign, Globe, Instagram, MessageCircle, Music2, Twitch, Twitter, Youtube } from 'lucide-react';
+import { scoresUrl } from '../config';
 import { DEFAULT_THEME, resolveElement } from '../theme/themes';
 import { getMood } from '../theme/moods';
 import { DEFAULT_PET, PetMascot, WalkingPet } from './pets';
@@ -181,6 +182,22 @@ export const defaultElement = (type, theme = DEFAULT_THEME) => {
             speed: 'medium',
             bgColor: T.panelColor, bgOpacity: 0.75,
             box: { x: 0, y: 93, w: 100, h: 7 },
+        },
+        match: {
+            // Football scoreboard — two teams (flag + name), score, match timeline.
+            // Manually controlled (bump the score / minute) so it never depends on a
+            // paid live feed; an auto data feed can layer on later without changing this.
+            matchId: null,                     // when set, live-links to a feed match
+            teamA: 'BRA', teamB: 'ARG',
+            flagA: 'br', flagB: 'ar',          // 2-letter ISO codes (flagcdn.com)
+            scoreA: 0, scoreB: 0,
+            minute: 0, status: 'LIVE', kickoff: '',   // status: SCHED | LIVE | HT | FT
+            fontSize: 30,
+            fontColor: T.textColor,            // team names
+            fillColor: T.accent,               // the score
+            bgColor: T.panelColor, bgOpacity: 0.8,
+            borderRadius: T.cornerRadius,
+            box: { x: 27, y: 4, w: 46, h: 13 },
         },
     };
 
@@ -566,6 +583,130 @@ const WheelElement = ({ element, T, onUpdate }) => {
     );
 };
 
+// ── Match scoreboard sub-component ─────────────────────────────────────────
+// A football-style scoreboard: two teams (flag + name), the score, and a match
+// timeline driven by the `minute` field. Built for hands-on control on stream —
+// bump the score / minute in the editor as the match plays. Flags come from the
+// free flagcdn.com image CDN keyed by 2-letter ISO code (renders everywhere,
+// unlike flag emoji which Windows/Chromium don't draw).
+// A flag value is either a direct image URL (a feed crest) or a flagcdn country
+// code like "br" / "gb-eng" (manual entry / sample data).
+const flagUrl = (v) => {
+    const s = String(v || '').trim();
+    if (/^https?:\/\//i.test(s)) return s;
+    const c = s.toLowerCase();
+    return /^[a-z]{2}(-[a-z]{2,3})?$/.test(c) ? `https://flagcdn.com/w80/${c}.png` : null;
+};
+
+const fmtKickoff = (iso) => {
+    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    catch { return ''; }
+};
+
+const MatchElement = ({ element, T }) => {
+    // When the scoreboard is linked to a feed match (matchId), poll the score
+    // feed and let it drive the display — this runs in the editor AND the OBS
+    // browser source, so both stay in sync without manual edits. Unlinked
+    // scoreboards just use their manually-entered fields.
+    const [live, setLive] = useState(null);
+    useEffect(() => {
+        if (!element.matchId) { setLive(null); return; }
+        let alive = true;
+        const load = () => fetch(scoresUrl())
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => {
+                if (!alive || !d) return;
+                const m = (d.matches || []).find(x => String(x.id) === String(element.matchId));
+                if (m) setLive(m);
+            })
+            .catch(() => {});
+        load();
+        const t = setInterval(load, 10000);   // matches the feed's 10s shared cache
+        return () => { alive = false; clearInterval(t); };
+    }, [element.matchId]);
+
+    const teamA  = live ? live.home.name  : (element.teamA ?? 'TBD');
+    const teamB  = live ? live.away.name  : (element.teamB ?? 'TBD');
+    const flagA  = live ? live.home.flag  : element.flagA;
+    const flagB  = live ? live.away.flag  : element.flagB;
+    const scoreA = live ? live.score.home : (element.scoreA ?? 0);
+    const scoreB = live ? live.score.away : (element.scoreB ?? 0);
+    const status = live ? live.status     : (element.status ?? 'LIVE');
+    const minute = live ? (live.minute ?? 0) : (element.minute ?? 0);
+    const kickoff = live
+        ? (status === 'SCHED' ? fmtKickoff(live.utcDate) : '')
+        : (element.kickoff ?? '');
+    const { fontColor, fillColor, fontSize = 30 } = element;
+    const names = fontColor || T.textColor;
+    const score = fillColor || T.accent;
+    const isLive = status === 'LIVE' || status === 'HT';
+    const nameFs = Math.max(11, fontSize * 0.42);
+    const flagH = Math.max(12, fontSize * 0.5);
+    const pct = Math.min(100, Math.max(0, (minute / 90) * 100));
+
+    const statusLabel =
+        status === 'FT'    ? 'FULL TIME'
+      : status === 'HT'    ? 'HALF TIME'
+      : status === 'SCHED' ? (kickoff ? `KICKOFF ${kickoff}` : 'UPCOMING')
+      : `${minute}'`;
+
+    const team = (name, flag, right) => {
+        const url = flagUrl(flag);
+        return (
+            <div style={{
+                display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0,
+                // Both teams pack toward the outer edges (name outermost, flag inner);
+                // the left team reverses its row so the flag sits next to the score.
+                justifyContent: 'flex-end',
+                flexDirection: right ? 'row-reverse' : 'row',
+            }}>
+                {url && (
+                    <img src={url} alt={name}
+                        style={{ width: flagH * 1.5, height: flagH, objectFit: 'cover', borderRadius: 2, flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                )}
+                <span style={{
+                    fontSize: nameFs, color: names, fontWeight: 800, fontFamily: T.fontFamily,
+                    letterSpacing: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                    textShadow: '0 1px 4px rgba(0,0,0,0.6)',
+                }}>{name}</span>
+            </div>
+        );
+    };
+
+    return (
+        <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '8px 14px', boxSizing: 'border-box', gap: 4 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                {team(teamA, flagA, true)}
+                {/* Score + status */}
+                <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, minWidth: fontSize * 2.4 }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', gap: fontSize * 0.18, fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>
+                        <span style={{ fontSize, fontWeight: 900, color: score, lineHeight: 1, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>{scoreA}</span>
+                        <span style={{ fontSize: fontSize * 0.6, color: names, opacity: 0.5 }}>–</span>
+                        <span style={{ fontSize, fontWeight: 900, color: score, lineHeight: 1, textShadow: '0 2px 8px rgba(0,0,0,0.5)' }}>{scoreB}</span>
+                    </div>
+                    <span style={{
+                        fontSize: Math.max(8, fontSize * 0.26), fontFamily: 'monospace', letterSpacing: 1, marginTop: 2,
+                        color: isLive ? '#ff5a5a' : 'rgba(255,255,255,0.55)', fontWeight: isLive ? 700 : 400,
+                        display: 'flex', alignItems: 'center', gap: 4, whiteSpace: 'nowrap',
+                    }}>
+                        {isLive && <span style={{ width: Math.max(4, fontSize * 0.13), height: Math.max(4, fontSize * 0.13), borderRadius: '50%', background: '#ff3b3b', boxShadow: '0 0 6px #ff3b3b', animation: 'pulse 1.4s ease-in-out infinite', display: 'inline-block' }} />}
+                        {statusLabel}
+                    </span>
+                </div>
+                {team(teamB, flagB, false)}
+            </div>
+            {/* Match timeline — fills 0→90' */}
+            {isLive && (
+                <div style={{ position: 'relative', height: 3, borderRadius: 99, background: 'rgba(255,255,255,0.15)', marginTop: 2 }}>
+                    <div style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: `${pct}%`, background: score, borderRadius: 99 }} />
+                    <div style={{ position: 'absolute', left: `${pct}%`, top: '50%', width: 6, height: 6, borderRadius: '50%', background: '#fff', transform: 'translate(-50%,-50%)', boxShadow: `0 0 5px ${score}` }} />
+                </div>
+            )}
+        </div>
+    );
+};
+
 // ── Main renderer ──────────────────────────────────────────────────────────
 const ElementRenderer = ({ element, onUploadLogo, onElementUpdate, editMode, theme = DEFAULT_THEME, mood = 'chill' }) => {
     const T = theme ?? DEFAULT_THEME;
@@ -764,6 +905,15 @@ const ElementRenderer = ({ element, onUploadLogo, onElementUpdate, editMode, the
         return (
             <div style={outerStyle}>
                 <TickerElement element={resolved} T={T} />
+            </div>
+        );
+    }
+
+    // ── Match scoreboard ── two teams, score, and a match timeline
+    if (type === 'match') {
+        return (
+            <div style={outerStyle}>
+                <MatchElement element={resolved} T={T} />
             </div>
         );
     }

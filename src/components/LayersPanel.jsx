@@ -127,6 +127,13 @@ const ELEMENT_TYPES = [
             <span style={{ width: 12, height: 2.5, background: '#34d399', borderRadius: 2, flexShrink: 0 }} />
         </span>
     )},
+    { type: 'match',      label: 'Scoreboard', color: '#22c55e', preview: (
+        <span style={{ display: 'flex', alignItems: 'center', gap: 3, fontFamily: 'monospace' }}>
+            <span style={{ width: 7, height: 5, background: '#22c55e', borderRadius: 1, display: 'block' }} />
+            <span style={{ fontSize: 9, fontWeight: 900, color: '#facc15' }}>1–0</span>
+            <span style={{ width: 7, height: 5, background: '#0ea5e9', borderRadius: 1, display: 'block' }} />
+        </span>
+    )},
 
     // ── Shapes ──
     { type: 'shape',    group: 'shape', label: 'Rectangle', color: '#8b5cf6', preview: <span style={{ width: 22, height: 14, border: '2px solid #8b5cf6', borderRadius: 3, display: 'block' }} /> },

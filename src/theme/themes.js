@@ -197,6 +197,17 @@ export const THEMES = [
         cornerRadius: 14,
         frameStyle: 'glow',
     },
+    {
+        id: 'worldcup',
+        name: 'World Cup',
+        accent: '#facc15',     // trophy gold
+        accent2: '#16a34a',    // pitch green
+        textColor: '#ffffff',
+        panelColor: '#0a2616',  // deep pitch green
+        fontFamily: 'inter, system-ui, sans-serif',
+        cornerRadius: 8,
+        frameStyle: 'gradient',
+    },
 ];
 
 export const DEFAULT_THEME = THEMES[0];

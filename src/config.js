@@ -41,6 +41,13 @@ export function layoutUrl() {
     return `${LAYOUT_API}/layout?room=${encodeURIComponent(getRoom())}`;
 }
 
+// Read-only score feed for the scoreboard's match picker (served by api/scores.js
+// in prod, the localScoresApi vite middleware in dev). Not room-scoped — the
+// match list is the same for everyone.
+export function scoresUrl() {
+    return `${LAYOUT_API}/scores`;
+}
+
 // True when no explicit room was chosen — i.e. we're on the shared default slot
 // that every fresh visitor lands on. "Go Live" mints a private room from here.
 export function isDefaultRoom() {

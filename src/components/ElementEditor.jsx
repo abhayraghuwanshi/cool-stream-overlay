@@ -1,6 +1,6 @@
 import { RefreshCw, Upload, X } from 'lucide-react';
-import { useRef } from 'react';
-import { hexToRgba } from './ElementRenderer';
+import { useEffect, useRef, useState } from 'react';
+import { scoresUrl } from '../config';
 import { MOODS, DEFAULT_MOOD } from '../theme/moods';
 import { PETS, DEFAULT_PET, PetMascot } from './pets';
 
@@ -187,8 +187,42 @@ const Group = ({ label, children }) => (
 
 // ── Main Editor ────────────────────────────────────────────────────────────
 
+// Format an ISO kickoff time as a short local time, e.g. "22:30".
+const fmtKickoff = (iso) => {
+    try { return new Date(iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
+    catch { return ''; }
+};
+
+// Relative day label for a match date — "Today" / "Tomorrow" / "Yesterday",
+// else a short date like "Jun 24".
+const fmtDay = (iso) => {
+    try {
+        const d = new Date(iso);
+        const day0 = new Date(); day0.setHours(0, 0, 0, 0);
+        const md = new Date(d); md.setHours(0, 0, 0, 0);
+        const diff = Math.round((md - day0) / 86400000);
+        if (diff === 0) return 'Today';
+        if (diff === 1) return 'Tomorrow';
+        if (diff === -1) return 'Yesterday';
+        return d.toLocaleDateString([], { month: 'short', day: 'numeric' });
+    } catch { return ''; }
+};
+
 const ElementEditor = ({ element, onChange, onDelete }) => {
     const fileRef = useRef(null);
+    // Match feed for the scoreboard picker — fetched once when a match element is
+    // selected. `null` while loading; otherwise { configured, matches: [...] }.
+    const [matchFeed, setMatchFeed] = useState(null);
+    const [matchQuery, setMatchQuery] = useState('');
+    useEffect(() => {
+        if (element?.type !== 'match') return;
+        let alive = true;
+        fetch(scoresUrl())
+            .then(r => (r.ok ? r.json() : null))
+            .then(d => { if (alive && d) setMatchFeed(d); })
+            .catch(() => {});
+        return () => { alive = false; };
+    }, [element?.type, element?.id]);
     if (!element) return null;
 
     const set = (key, val) => onChange({ [key]: val });
@@ -551,6 +585,122 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                         onChange={v => set('fillColor', v)}
                         label="Bar color"
                     />
+                    <Divider />
+                </>
+            )}
+
+            {/* ── Match scoreboard: teams, flags, score, status ── */}
+            {type === 'match' && (
+                <>
+                    {/* Match picker — search the feed and click one to fill + live-link */}
+                    <Group label="Find match">
+                        <TextInput value={matchQuery} onChange={setMatchQuery} placeholder="Search team (e.g. Brazil)…" style={{ width: 174 }} />
+                    </Group>
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: 3, width: '100%', maxHeight: 156, overflowY: 'auto' }}>
+                        {!matchFeed && (
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', padding: '2px 0' }}>Loading matches…</div>
+                        )}
+                        {matchFeed && (matchFeed.matches || [])
+                            .filter(m => {
+                                const s = matchQuery.trim().toLowerCase();
+                                return !s || m.home.name.toLowerCase().includes(s) || m.away.name.toLowerCase().includes(s) || (m.stage || '').toLowerCase().includes(s);
+                            })
+                            .slice(0, 40)
+                            .map(m => {
+                                const sel = String(element.matchId) === String(m.id);
+                                const live = m.status === 'LIVE' || m.status === 'HT';
+                                const right = m.status === 'SCHED' ? fmtKickoff(m.utcDate) : m.status === 'FT' ? 'FT' : m.status === 'HT' ? 'HT' : `${m.minute ?? 0}'`;
+                                return (
+                                    <button key={m.id} onClick={() => onChange({
+                                        matchId: m.id,
+                                        teamA: m.home.name, flagA: m.home.flag,
+                                        teamB: m.away.name, flagB: m.away.flag,
+                                        scoreA: m.score.home, scoreB: m.score.away,
+                                        status: m.status, minute: m.minute ?? 0,
+                                        kickoff: m.status === 'SCHED' ? fmtKickoff(m.utcDate) : '',
+                                    })} style={{
+                                        display: 'flex', alignItems: 'center', gap: 6, padding: '4px 7px', borderRadius: 6, cursor: 'pointer', textAlign: 'left', width: '100%', boxSizing: 'border-box',
+                                        border: `1px solid ${sel ? 'rgba(34,197,94,0.6)' : 'rgba(255,255,255,0.1)'}`,
+                                        background: sel ? 'rgba(34,197,94,0.14)' : 'rgba(255,255,255,0.04)',
+                                    }}>
+                                        <span style={{ flex: 1, fontSize: 11, color: '#fff', fontWeight: 600, fontFamily: 'monospace', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                                            {m.home.name} {m.score.home}–{m.score.away} {m.away.name}
+                                        </span>
+                                        <span style={{ display: 'flex', flexDirection: 'column', alignItems: 'flex-end', flexShrink: 0, lineHeight: 1.25 }}>
+                                            <span style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.5)' }}>{fmtDay(m.utcDate)}</span>
+                                            <span style={{ fontSize: 9, fontFamily: 'monospace', color: live ? '#ff7a7a' : 'rgba(255,255,255,0.45)' }}>{right}</span>
+                                        </span>
+                                    </button>
+                                );
+                            })}
+                        {matchFeed && (matchFeed.matches || []).length === 0 && (
+                            <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', padding: '2px 0' }}>
+                                {matchFeed.error ? `Feed error: ${matchFeed.error}` : 'No matches available.'}
+                            </div>
+                        )}
+                    </div>
+                    {element.matchId && (
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                            <span style={{ fontSize: 9, color: '#4ade80', fontFamily: 'monospace' }}>● Live-linked · auto-updates</span>
+                            <ToggleBtn active={false} onClick={() => onChange({ matchId: null })} title="Unlink and edit by hand">Detach</ToggleBtn>
+                        </div>
+                    )}
+                    {matchFeed && matchFeed.configured === false && (
+                        <div style={{ fontSize: 9, color: 'rgba(250,204,21,0.85)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                            Sample data. Set FOOTBALL_DATA_TOKEN for live World Cup matches.
+                        </div>
+                    )}
+                    <Divider />
+
+                    <Group label="Teams">
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: '100%' }}>
+                            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                                <TextInput value={element.teamA} onChange={v => set('teamA', v)} placeholder="Home" style={{ width: 86 }} />
+                                <TextInput value={element.flagA} onChange={v => set('flagA', v)} placeholder="br" style={{ width: 44 }} />
+                                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>home</span>
+                            </div>
+                            <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
+                                <TextInput value={element.teamB} onChange={v => set('teamB', v)} placeholder="Away" style={{ width: 86 }} />
+                                <TextInput value={element.flagB} onChange={v => set('flagB', v)} placeholder="ar" style={{ width: 44 }} />
+                                <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>away</span>
+                            </div>
+                        </div>
+                    </Group>
+                    <Group label="Score">
+                        <NumberInput value={element.scoreA ?? 0} onChange={v => set('scoreA', Math.max(0, v))} min={0} max={99} style={{ width: 46 }} />
+                        <ToggleBtn active={false} onClick={() => set('scoreA', Math.max(0, (element.scoreA ?? 0) + 1))} title="Home +1">+</ToggleBtn>
+                        <span style={{ fontSize: 11, color: 'rgba(255,255,255,0.4)' }}>–</span>
+                        <ToggleBtn active={false} onClick={() => set('scoreB', Math.max(0, (element.scoreB ?? 0) + 1))} title="Away +1">+</ToggleBtn>
+                        <NumberInput value={element.scoreB ?? 0} onChange={v => set('scoreB', Math.max(0, v))} min={0} max={99} style={{ width: 46 }} />
+                    </Group>
+                    <Group label="Status">
+                        {[['LIVE', 'Live'], ['HT', 'Half'], ['FT', 'Full'], ['SCHED', 'Soon']].map(([v, l]) => (
+                            <ToggleBtn key={v} active={(element.status ?? 'LIVE') === v} onClick={() => set('status', v)} title={l}>{l}</ToggleBtn>
+                        ))}
+                    </Group>
+                    {(element.status ?? 'LIVE') === 'LIVE' && (
+                        <Group label="Minute">
+                            <NumberInput value={element.minute ?? 0} onChange={v => set('minute', Math.max(0, Math.min(120, v)))} min={0} max={120} style={{ width: 52 }} />
+                            <span style={{ fontSize: 9, color: 'rgba(255,255,255,0.35)', fontFamily: 'monospace' }}>of 90'</span>
+                        </Group>
+                    )}
+                    {(element.status ?? 'LIVE') === 'SCHED' && (
+                        <Group label="Kickoff">
+                            <TextInput value={element.kickoff} onChange={v => set('kickoff', v)} placeholder="19:00" style={{ width: 90 }} />
+                        </Group>
+                    )}
+                    <Group label="Size">
+                        <NumberInput value={element.fontSize ?? 30} onChange={v => set('fontSize', Math.max(14, Math.min(80, v)))} min={14} max={80} style={{ width: 52 }} />
+                    </Group>
+                    <ColorInput value={element.fontColor} onChange={v => set('fontColor', v)} label="Name color" />
+                    <ColorInput
+                        value={typeof element.fillColor === 'string' && element.fillColor.startsWith('@') ? '#facc15' : element.fillColor}
+                        onChange={v => set('fillColor', v)}
+                        label="Score color"
+                    />
+                    <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
+                        Flag = 2-letter country code (br, ar, fr, de, gb-eng…). Tap + as goals go in.
+                    </div>
                     <Divider />
                 </>
             )}
