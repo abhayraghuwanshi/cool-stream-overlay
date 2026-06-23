@@ -604,6 +604,23 @@ const fmtKickoff = (iso) => {
     catch { return ''; }
 };
 
+// Parse manual scorers into one line per player. Split on newlines AND commas,
+// but a comma token that starts with a digit / "+" is another goal-minute for
+// the previous player — so "Ronaldo 23', 45'" stays one line while
+// "Ronaldo 23', Fernandes 67'" becomes two.
+const parseScorers = (raw) => {
+    const lines = [];
+    String(raw || '').split('\n').forEach(seg => {
+        seg.split(',').forEach(tok => {
+            const t = tok.trim();
+            if (!t) return;
+            if (/^[+\d]/.test(t) && lines.length) lines[lines.length - 1] += `, ${t}`;
+            else lines.push(t);
+        });
+    });
+    return lines;
+};
+
 const MatchElement = ({ element, T }) => {
     // When the scoreboard is linked to a feed match (matchId), poll the score
     // feed and let it drive the display — this runs in the editor AND the OBS
@@ -656,9 +673,7 @@ const MatchElement = ({ element, T }) => {
     // team name on its side — manual text, the free feed has no goal events.
     const team = (name, flag, home, scorers) => {
         const url = flagUrl(flag);
-        // One scorer per line; a player's multiple goals stay on one line
-        // (e.g. "Ronaldo 23', 45'"), so split on newlines only — not commas.
-        const lines = String(scorers || '').split('\n').map(s => s.trim()).filter(Boolean);
+        const lines = parseScorers(scorers);
         return (
             <div style={{
                 display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: 2,
