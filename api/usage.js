@@ -57,6 +57,27 @@ export default async function handler(req, res) {
         }
 
         if (req.method === 'GET') {
+            // Public aggregate for the landing page — site totals only, never the
+            // per-room breakdown or room ids, so no key is required.
+            if (req.query.summary !== undefined) {
+                const days = Math.min(90, Math.max(1, parseInt(req.query.days, 10) || 14));
+                const dates = lastNDays(days);
+                const p = redis.pipeline();
+                p.scard('u:rooms');
+                for (const d of dates) { p.get(`u:loads:_all:${d}`); p.pfcount(`u:uniq:_all:${d}`); }
+                const flat = await p.exec();
+                const rooms = Number(flat[0]) || 0;
+                let i = 1, totalLoads = 0; const byDay = {};
+                for (const d of dates) {
+                    const loads = Number(flat[i++]) || 0;
+                    const uniques = Number(flat[i++]) || 0;
+                    byDay[d] = { loads, uniques };
+                    totalLoads += loads;
+                }
+                res.status(200).json({ rooms, days, totalLoads, today: byDay[dates[dates.length - 1]], byDay });
+                return;
+            }
+
             // Room ids are meant to be hard to guess, so don't expose the stats
             // (and the room list) to anyone. If USAGE_KEY is set, require it as
             // ?key=…; if it's unset, the endpoint stays open (simple default).

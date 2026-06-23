@@ -130,6 +130,16 @@ function localUsageApi() {
           const days = Math.min(90, Math.max(1, parseInt(url.searchParams.get('days'), 10) || 14))
           const dates = []
           for (let i = days - 1; i >= 0; i--) { const dt = new Date(); dt.setUTCDate(dt.getUTCDate() - i); dates.push(dt.toISOString().slice(0, 10)) }
+          if (url.searchParams.has('summary')) {
+            let totalLoads = 0; const byDay = {}
+            for (const d of dates) {
+              const loads = store.loads[`_all:${d}`] || 0
+              byDay[d] = { loads, uniques: (store.uniq[`_all:${d}`] || []).length }
+              totalLoads += loads
+            }
+            res.end(JSON.stringify({ rooms: store.rooms.length, days, totalLoads, today: byDay[dates[dates.length - 1]], byDay }))
+            return
+          }
           const targets = ['_all', ...store.rooms.filter(r => r !== '_all')]
           const rooms = {}
           for (const room of targets) {
