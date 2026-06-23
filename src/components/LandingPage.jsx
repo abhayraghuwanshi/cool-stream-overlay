@@ -124,11 +124,14 @@ export default function LandingPage() {
                 </div>
             </div>
 
-            {/* stats — editorial strip, big numerals divided by hairlines */}
+            {/* stats — big numerals. A top rule per cell + a bottom rule on the
+                band: on desktop the rules line up into one band; when cells wrap on
+                mobile each top rule becomes a clean divider. No vertical borders to
+                orphan, so nothing breaks at any width. */}
             <div style={{ ...wrap, paddingBottom: 'clamp(48px, 8vw, 80px)' }}>
-                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
-                    {STATS.map((s, i) => (
-                        <div key={s.l} style={{ flex: '1 1 160px', padding: '22px 0', borderLeft: i ? `1px solid ${C.line}` : 'none', paddingLeft: i ? 24 : 0 }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', borderBottom: `1px solid ${C.line}` }}>
+                    {STATS.map((s) => (
+                        <div key={s.l} style={{ flex: '1 1 150px', borderTop: `1px solid ${C.line}`, padding: '22px 0 20px' }}>
                             <div style={{ fontFamily: DISPLAY, fontSize: 40, fontWeight: 700, lineHeight: 1, letterSpacing: -1 }}>{s.v}</div>
                             <div style={{ fontFamily: BODY, fontSize: 12, color: C.faint, letterSpacing: 0.5, marginTop: 8 }}>{s.l}</div>
                         </div>
