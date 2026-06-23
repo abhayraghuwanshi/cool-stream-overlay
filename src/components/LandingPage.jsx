@@ -26,48 +26,51 @@ const matchWhen = (m) => {
 };
 
 const FEATURES = [
-    { icon: '🎛️', title: 'Drag-and-drop editor', desc: 'Place cams, text and widgets on a live 16:9 canvas. No code, no installs.' },
-    { icon: '📺', title: 'OBS browser source', desc: 'One link drops the overlay straight into OBS. Your edits sync to it live.' },
-    { icon: '⚽', title: 'Live World Cup scoreboard', desc: 'Search a match, pick it, and the score auto-updates on stream by itself.' },
-    { icon: '🐾', title: 'Channel pets & mood ring', desc: 'Cute mascots that roam and react to the vibe of your stream.' },
-    { icon: '🎯', title: 'Goals, timers & widgets', desc: 'Follower/sub goals, countdowns, pomodoro, tickers, sticky notes, a spin wheel.' },
-    { icon: '🎨', title: 'One-click themes + recording', desc: 'Re-skin the entire overlay instantly, and record your stream in-browser.' },
+    { title: 'Drag-and-drop editor', desc: 'Place cameras, text and widgets on a live 16:9 canvas. No code, nothing to install.' },
+    { title: 'OBS browser source', desc: 'One link drops the overlay straight into OBS — and your edits sync to it as you make them.' },
+    { title: 'Live World Cup scoreboard', desc: 'Search a fixture, pick it, and the score keeps itself up to date on stream.' },
+    { title: 'Pets & mood ring', desc: 'Little mascots that roam the canvas and shift with the mood of the room.' },
+    { title: 'Goals, timers & widgets', desc: 'Follower and sub goals, countdowns, a pomodoro, tickers, sticky notes, a spin wheel.' },
+    { title: 'Themes & recording', desc: 'Re-skin the whole overlay in a click, and record the stream right in the browser.' },
 ];
 
+// Warm near-monochrome palette — type does the work, colour is used sparingly.
 const C = {
-    accent: '#6366f1', accent2: '#a855f7', green: '#34d399', gold: '#facc15',
-    text: '#f4f4f8', dim: 'rgba(255,255,255,0.55)', faint: 'rgba(255,255,255,0.32)',
-    panel: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)',
+    bg: '#0b0b0d',
+    ink: '#f1efe9',
+    dim: 'rgba(241,239,233,0.56)',
+    faint: 'rgba(241,239,233,0.34)',
+    line: 'rgba(241,239,233,0.12)',
+    accent: '#ff6a3d',
+    live: '#ff5b5b',
+    win: '#e7c14b',
 };
+const DISPLAY = "'Space Grotesk', 'Inter', system-ui, sans-serif";
+const BODY = "'Inter', system-ui, sans-serif";
 
-const Stat = ({ value, label }) => (
-    <div style={{ flex: '1 1 140px', background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: '18px 20px', textAlign: 'center' }}>
-        <div style={{ fontSize: 30, fontWeight: 900, color: C.text, fontFamily: 'monospace', lineHeight: 1 }}>{value}</div>
-        <div style={{ fontSize: 11, color: C.faint, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 1.5, marginTop: 6 }}>{label}</div>
-    </div>
-);
+const kicker = { fontFamily: DISPLAY, fontSize: 12, fontWeight: 600, letterSpacing: 3, textTransform: 'uppercase', color: C.faint };
 
-const MatchCard = ({ m }) => {
+const MatchRow = ({ m }) => {
     const live = m.status === 'LIVE' || m.status === 'HT';
     const fa = flagSrc(m.home.flag), fb = flagSrc(m.away.flag);
-    const Flag = ({ src }) => src ? <img src={src} alt="" style={{ width: 22, height: 15, objectFit: 'cover', borderRadius: 2, flexShrink: 0 }} onError={e => e.currentTarget.style.display = 'none'} /> : null;
+    const Flag = ({ src }) => src ? <img src={src} alt="" style={{ width: 20, height: 14, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} onError={e => e.currentTarget.style.display = 'none'} /> : null;
+    const nm = { fontFamily: DISPLAY, fontSize: 14, fontWeight: 500, color: C.ink };
     return (
-        <div style={{ background: C.panel, border: `1px solid ${live ? 'rgba(255,90,90,0.4)' : C.border}`, borderRadius: 12, padding: '12px 14px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', fontSize: 10, fontFamily: 'monospace', letterSpacing: 1 }}>
-                <span style={{ color: C.faint, textTransform: 'uppercase' }}>{m.stage || 'World Cup'}</span>
-                <span style={{ color: live ? '#ff6b6b' : C.dim, fontWeight: 700, display: 'flex', alignItems: 'center', gap: 4 }}>
-                    {live && <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ff3b3b', boxShadow: '0 0 6px #ff3b3b', animation: 'pulse 1.4s ease-in-out infinite' }} />}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr auto 1fr', alignItems: 'center', gap: 12, padding: '13px 2px', borderTop: `1px solid ${C.line}` }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0 }}>
+                <Flag src={fa} /><span style={nm}>{m.home.name}</span>
+            </div>
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 2 }}>
+                <span style={{ fontFamily: DISPLAY, fontSize: 17, fontWeight: 700, color: C.ink, fontVariantNumeric: 'tabular-nums', letterSpacing: 1 }}>
+                    {m.score.home}<span style={{ color: C.faint, margin: '0 5px' }}>:</span>{m.score.away}
+                </span>
+                <span style={{ fontFamily: BODY, fontSize: 10, letterSpacing: 0.5, color: live ? C.live : C.faint, display: 'flex', alignItems: 'center', gap: 4 }}>
+                    {live && <span style={{ width: 5, height: 5, borderRadius: '50%', background: C.live, boxShadow: `0 0 6px ${C.live}`, animation: 'pulse 1.4s ease-in-out infinite' }} />}
                     {matchWhen(m)}
                 </span>
             </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0 }}>
-                    <Flag src={fa} /><span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: 'monospace' }}>{m.home.name}</span>
-                </div>
-                <span style={{ fontSize: 18, fontWeight: 900, color: C.gold, fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>{m.score.home}–{m.score.away}</span>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 1, minWidth: 0, justifyContent: 'flex-end' }}>
-                    <span style={{ fontSize: 13, fontWeight: 700, color: C.text, fontFamily: 'monospace' }}>{m.away.name}</span><Flag src={fb} />
-                </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, minWidth: 0, justifyContent: 'flex-end' }}>
+                <span style={nm}>{m.away.name}</span><Flag src={fb} />
             </div>
         </div>
     );
@@ -79,9 +82,6 @@ export default function LandingPage() {
 
     useEffect(() => {
         document.title = 'Overlay Studio — custom stream overlays in your browser';
-        // The app locks body scroll (overflow:hidden) so OBS/editor never show
-        // scrollbars. The landing page is a normal tall page, so re-enable native
-        // scrolling here and restore the lock if we ever leave.
         const prev = document.body.style.overflow;
         document.body.style.overflow = 'auto';
         let alive = true;
@@ -93,82 +93,87 @@ export default function LandingPage() {
     const topMatches = (matches || []).slice().sort(sortMatches).slice(0, 6);
     const num = (n) => n == null ? '—' : Intl.NumberFormat().format(n);
 
-    const wrap = { maxWidth: 1080, margin: '0 auto', padding: '0 24px', boxSizing: 'border-box' };
-    const sectionLabel = { fontSize: 11, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: C.accent2, marginBottom: 10 };
+    const wrap = { maxWidth: 940, margin: '0 auto', padding: '0 28px', boxSizing: 'border-box' };
+    const btn = { fontFamily: DISPLAY, fontSize: 15, fontWeight: 600, color: C.bg, background: C.ink, padding: '12px 22px', borderRadius: 6, textDecoration: 'none', display: 'inline-block' };
+    const STATS = [
+        { v: num(stats?.rooms), l: 'overlays created' },
+        { v: num(stats?.today?.uniques), l: 'visitors today' },
+        { v: num(stats?.totalLoads), l: 'loads · 14 days' },
+    ];
 
     return (
-        <div style={{ minHeight: '100vh', background: 'radial-gradient(1200px 600px at 50% -10%, rgba(99,102,241,0.18), transparent), #08080d', color: C.text, fontFamily: 'inter, system-ui, sans-serif' }}>
-            {/* Nav */}
-            <div style={{ ...wrap, display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '20px 24px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 9, fontWeight: 800, letterSpacing: 0.5 }}>
-                    <span style={{ width: 12, height: 12, borderRadius: 4, background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, display: 'inline-block' }} />
-                    Overlay Studio
-                </div>
-                <a href="/" style={{ textDecoration: 'none', fontSize: 13, fontWeight: 700, color: '#fff', background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, padding: '9px 18px', borderRadius: 9 }}>Open Studio →</a>
+        <div style={{ minHeight: '100vh', background: C.bg, color: C.ink, fontFamily: BODY, WebkitFontSmoothing: 'antialiased' }}>
+            {/* top bar */}
+            <div style={{ ...wrap, display: 'flex', alignItems: 'center', justifyContent: 'space-between', height: 72 }}>
+                <span style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 16, letterSpacing: -0.2 }}>Overlay Studio</span>
+                <a href="/" style={{ fontFamily: DISPLAY, fontSize: 14, fontWeight: 500, color: C.ink, textDecoration: 'none', borderBottom: `1px solid ${C.accent}`, paddingBottom: 2 }}>Open the studio →</a>
             </div>
 
-            {/* Hero */}
-            <div style={{ ...wrap, textAlign: 'center', paddingTop: 64, paddingBottom: 40 }}>
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 7, fontSize: 11, fontFamily: 'monospace', color: C.green, border: `1px solid ${C.border}`, borderRadius: 99, padding: '5px 12px', marginBottom: 22 }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: C.green, boxShadow: `0 0 6px ${C.green}` }} />
-                    Now with a live World Cup scoreboard
-                </div>
-                <h1 style={{ fontSize: 'clamp(34px, 6vw, 60px)', fontWeight: 900, lineHeight: 1.05, margin: 0, letterSpacing: -1 }}>
-                    Your stream overlay,<br /><span style={{ background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent', backgroundClip: 'text' }}>built in the browser</span>
+            {/* hero — left aligned, type led */}
+            <div style={{ ...wrap, paddingTop: 'clamp(56px, 11vw, 120px)', paddingBottom: 'clamp(48px, 8vw, 88px)' }}>
+                <div style={kicker}>Browser-native stream overlays</div>
+                <h1 style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 'clamp(38px, 7vw, 76px)', lineHeight: 1.02, letterSpacing: -1.5, margin: '20px 0 0', maxWidth: 760 }}>
+                    Design your overlay,<br />then drop one link<br />into OBS<span style={{ color: C.accent }}>.</span>
                 </h1>
-                <p style={{ fontSize: 'clamp(15px, 2.4vw, 19px)', color: C.dim, maxWidth: 600, margin: '20px auto 0', lineHeight: 1.55 }}>
-                    Drag, drop, and theme a custom overlay — then drop one link into OBS. Cameras, live scores, goals, pets, timers, and recording, no installs.
+                <p style={{ fontFamily: BODY, fontSize: 'clamp(15px, 2vw, 18px)', color: C.dim, maxWidth: 540, lineHeight: 1.6, margin: '26px 0 0' }}>
+                    Cameras, live scores, goals, pets, timers and themes — arranged on a real canvas and recorded in the browser. Nothing to install.
                 </p>
-                <div style={{ display: 'flex', gap: 12, justifyContent: 'center', flexWrap: 'wrap', marginTop: 30 }}>
-                    <a href="/" style={{ textDecoration: 'none', fontSize: 15, fontWeight: 800, color: '#fff', background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, padding: '13px 26px', borderRadius: 11 }}>Open Studio →</a>
-                    <a href="#features" style={{ textDecoration: 'none', fontSize: 15, fontWeight: 700, color: C.text, background: C.panel, border: `1px solid ${C.border}`, padding: '13px 26px', borderRadius: 11 }}>See features</a>
+                <div style={{ display: 'flex', gap: 22, alignItems: 'center', flexWrap: 'wrap', marginTop: 34 }}>
+                    <a href="/" style={btn}>Open the studio →</a>
+                    <a href="#features" style={{ fontFamily: DISPLAY, fontSize: 15, fontWeight: 500, color: C.dim, textDecoration: 'none' }}>See what's inside ↓</a>
                 </div>
             </div>
 
-            {/* Stats */}
-            <div style={{ ...wrap, paddingTop: 16, paddingBottom: 40 }}>
-                <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap' }}>
-                    <Stat value={num(stats?.rooms)} label="Overlays created" />
-                    <Stat value={num(stats?.today?.uniques)} label="Visitors today" />
-                    <Stat value={num(stats?.totalLoads)} label="Loads · 14 days" />
-                </div>
-            </div>
-
-            {/* Live World Cup */}
-            {topMatches.length > 0 && (
-                <div style={{ ...wrap, paddingBottom: 48 }}>
-                    <div style={sectionLabel}>⚽ Live from the World Cup</div>
-                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 12 }}>
-                        {topMatches.map(m => <MatchCard key={m.id} m={m} />)}
-                    </div>
-                    <div style={{ fontSize: 11, color: C.faint, fontFamily: 'monospace', marginTop: 12 }}>
-                        The same feed powers the in-overlay scoreboard. Pick a match in the studio and it tracks the score for you.
-                    </div>
-                </div>
-            )}
-
-            {/* Features */}
-            <div id="features" style={{ ...wrap, paddingBottom: 56 }}>
-                <div style={sectionLabel}>What's inside</div>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: 14 }}>
-                    {FEATURES.map(f => (
-                        <div key={f.title} style={{ background: C.panel, border: `1px solid ${C.border}`, borderRadius: 14, padding: '20px' }}>
-                            <div style={{ fontSize: 26, marginBottom: 10 }}>{f.icon}</div>
-                            <div style={{ fontSize: 16, fontWeight: 800, marginBottom: 6 }}>{f.title}</div>
-                            <div style={{ fontSize: 13.5, color: C.dim, lineHeight: 1.5 }}>{f.desc}</div>
+            {/* stats — editorial strip, big numerals divided by hairlines */}
+            <div style={{ ...wrap, paddingBottom: 'clamp(48px, 8vw, 80px)' }}>
+                <div style={{ display: 'flex', flexWrap: 'wrap', gap: 0, borderTop: `1px solid ${C.line}`, borderBottom: `1px solid ${C.line}` }}>
+                    {STATS.map((s, i) => (
+                        <div key={s.l} style={{ flex: '1 1 160px', padding: '22px 0', borderLeft: i ? `1px solid ${C.line}` : 'none', paddingLeft: i ? 24 : 0 }}>
+                            <div style={{ fontFamily: DISPLAY, fontSize: 40, fontWeight: 700, lineHeight: 1, letterSpacing: -1 }}>{s.v}</div>
+                            <div style={{ fontFamily: BODY, fontSize: 12, color: C.faint, letterSpacing: 0.5, marginTop: 8 }}>{s.l}</div>
                         </div>
                     ))}
                 </div>
             </div>
 
-            {/* Footer CTA */}
-            <div style={{ ...wrap, textAlign: 'center', paddingBottom: 72 }}>
-                <div style={{ background: 'linear-gradient(135deg, rgba(99,102,241,0.15), rgba(168,85,247,0.12))', border: `1px solid ${C.border}`, borderRadius: 20, padding: '40px 24px' }}>
-                    <h2 style={{ fontSize: 'clamp(24px, 4vw, 34px)', fontWeight: 900, margin: 0 }}>Ready to build your overlay?</h2>
-                    <p style={{ color: C.dim, marginTop: 10, marginBottom: 24 }}>It's free, runs in your browser, and works with OBS.</p>
-                    <a href="/" style={{ textDecoration: 'none', fontSize: 15, fontWeight: 800, color: '#fff', background: `linear-gradient(135deg, ${C.accent}, ${C.accent2})`, padding: '14px 30px', borderRadius: 11 }}>Open Studio →</a>
+            {/* live world cup */}
+            {topMatches.length > 0 && (
+                <div style={{ ...wrap, paddingBottom: 'clamp(48px, 8vw, 80px)' }}>
+                    <div style={{ display: 'flex', alignItems: 'baseline', justifyContent: 'space-between', marginBottom: 8 }}>
+                        <div style={kicker}>Live · FIFA World Cup</div>
+                        <div style={{ fontFamily: BODY, fontSize: 12, color: C.faint }}>powers the in-overlay scoreboard</div>
+                    </div>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '0 40px' }}>
+                        {topMatches.map(m => <MatchRow key={m.id} m={m} />)}
+                    </div>
                 </div>
-                <div style={{ fontSize: 12, color: C.faint, marginTop: 28 }}>Overlay Studio · runs as an OBS browser source</div>
+            )}
+
+            {/* features — numbered list, no icons */}
+            <div id="features" style={{ ...wrap, paddingBottom: 'clamp(48px, 8vw, 80px)' }}>
+                <div style={{ ...kicker, marginBottom: 18 }}>What's inside</div>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '0 48px' }}>
+                    {FEATURES.map((f, i) => (
+                        <div key={f.title} style={{ display: 'flex', gap: 16, padding: '22px 0', borderTop: `1px solid ${C.line}` }}>
+                            <span style={{ fontFamily: DISPLAY, fontSize: 13, fontWeight: 600, color: C.accent, paddingTop: 3, fontVariantNumeric: 'tabular-nums' }}>{String(i + 1).padStart(2, '0')}</span>
+                            <div>
+                                <div style={{ fontFamily: DISPLAY, fontSize: 18, fontWeight: 600, letterSpacing: -0.3 }}>{f.title}</div>
+                                <div style={{ fontFamily: BODY, fontSize: 14, color: C.dim, lineHeight: 1.55, marginTop: 6 }}>{f.desc}</div>
+                            </div>
+                        </div>
+                    ))}
+                </div>
+            </div>
+
+            {/* close */}
+            <div style={{ ...wrap, paddingTop: 'clamp(40px, 7vw, 72px)', paddingBottom: 'clamp(56px, 9vw, 96px)', borderTop: `1px solid ${C.line}` }}>
+                <h2 style={{ fontFamily: DISPLAY, fontWeight: 700, fontSize: 'clamp(26px, 4.5vw, 40px)', letterSpacing: -1, lineHeight: 1.1, margin: 0, maxWidth: 520 }}>
+                    Build the overlay your stream actually deserves.
+                </h2>
+                <div style={{ marginTop: 26 }}>
+                    <a href="/" style={btn}>Open the studio →</a>
+                </div>
+                <div style={{ fontFamily: BODY, fontSize: 12, color: C.faint, marginTop: 44 }}>Overlay Studio — free, browser-based, runs as an OBS browser source.</div>
             </div>
         </div>
     );
