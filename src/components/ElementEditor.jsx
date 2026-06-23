@@ -712,6 +712,20 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                     <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
                         Scorers are manual — the free feed has no goal data. Separate players with a comma; extra minutes after a name are that player's other goals (Ronaldo 23', 45').
                     </div>
+                    {(() => {
+                        // One goal per comma/newline token that contains a minute.
+                        const goals = (s) => String(s || '').split(/[,\n]/).filter(t => /\d/.test(t)).length;
+                        const gh = goals(element.scorersHome), ga = goals(element.scorersAway);
+                        const sh = element.scoreA ?? 0, sa = element.scoreB ?? 0;
+                        const miss = [];
+                        if (gh !== sh) miss.push(`${element.teamA || 'Home'} ${gh}/${sh}`);
+                        if (ga !== sa) miss.push(`${element.teamB || 'Away'} ${ga}/${sa}`);
+                        return miss.length ? (
+                            <div style={{ fontSize: 9.5, color: '#fbbf24', fontFamily: 'monospace', lineHeight: 1.4, background: 'rgba(251,191,36,0.1)', border: '1px solid rgba(251,191,36,0.25)', borderRadius: 5, padding: '5px 8px' }}>
+                                ⚠ Scorers don't match the score — {miss.join(', ')} goals listed. Add the rest, or they came from the live feed.
+                            </div>
+                        ) : null;
+                    })()}
                     <Group label="Size">
                         <NumberInput value={element.fontSize ?? 30} onChange={v => set('fontSize', Math.max(14, Math.min(80, v)))} min={14} max={80} style={{ width: 52 }} />
                     </Group>
