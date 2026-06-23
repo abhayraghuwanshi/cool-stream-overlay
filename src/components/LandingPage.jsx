@@ -173,7 +173,16 @@ export default function LandingPage() {
                 <div style={{ marginTop: 26 }}>
                     <a href="/" style={btn}>Open the studio →</a>
                 </div>
-                <div style={{ fontFamily: BODY, fontSize: 12, color: C.faint, marginTop: 44 }}>Overlay Studio — free, browser-based, runs as an OBS browser source.</div>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: 14, marginTop: 44 }}>
+                    <span style={{ fontFamily: BODY, fontSize: 12, color: C.faint }}>Overlay Studio — free, browser-based, runs as an OBS browser source.</span>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: 20 }}>
+                        <a href="/" style={{ fontFamily: DISPLAY, fontSize: 13, fontWeight: 500, color: C.dim, textDecoration: 'none' }}>Studio</a>
+                        <a href="https://github.com/abhayraghuwanshi/cool-stream-overlay" target="_blank" rel="noreferrer"
+                            style={{ fontFamily: DISPLAY, fontSize: 13, fontWeight: 500, color: C.dim, textDecoration: 'none', borderBottom: `1px solid ${C.line}`, paddingBottom: 2 }}>
+                            GitHub ↗
+                        </a>
+                    </div>
+                </div>
             </div>
         </div>
     );

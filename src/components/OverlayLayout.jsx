@@ -940,16 +940,18 @@ const OverlayLayout = () => {
                                 <Layers size={13} />Layers
                             </button>
                         )}
-                        <div style={{
-                            width: 18, height: 18, borderRadius: 4, flexShrink: 0,
-                            background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.45)',
-                            display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#a5b4fc',
-                        }}><Circle size={8} fill="#a5b4fc" strokeWidth={0} /></div>
-                        {!isNarrow && (
-                            <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
-                                Overlay Studio
-                            </span>
-                        )}
+                        <a href="/?home" title="Home" style={{ display: 'flex', alignItems: 'center', gap: 8, textDecoration: 'none' }}>
+                            <div style={{
+                                width: 18, height: 18, borderRadius: 4, flexShrink: 0,
+                                background: 'rgba(99,102,241,0.25)', border: '1px solid rgba(99,102,241,0.45)',
+                                display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 9, color: '#a5b4fc',
+                            }}><Circle size={8} fill="#a5b4fc" strokeWidth={0} /></div>
+                            {!isNarrow && (
+                                <span style={{ fontSize: 10, fontFamily: 'monospace', textTransform: 'uppercase', letterSpacing: 3, color: 'rgba(255,255,255,0.45)' }}>
+                                    Overlay Studio
+                                </span>
+                            )}
+                        </a>
                     </div>
                     {/* Right: actions */}
                     <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
