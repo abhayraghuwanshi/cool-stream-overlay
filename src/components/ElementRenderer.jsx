@@ -656,7 +656,9 @@ const MatchElement = ({ element, T }) => {
     // team name on its side — manual text, the free feed has no goal events.
     const team = (name, flag, home, scorers) => {
         const url = flagUrl(flag);
-        const lines = String(scorers || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean);
+        // One scorer per line; a player's multiple goals stay on one line
+        // (e.g. "Ronaldo 23', 45'"), so split on newlines only — not commas.
+        const lines = String(scorers || '').split('\n').map(s => s.trim()).filter(Boolean);
         return (
             <div style={{
                 display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: 2,

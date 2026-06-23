@@ -705,12 +705,12 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                     )}
                     <Group label="Scorers">
                         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, width: '100%' }}>
-                            <TextInput value={element.scorersHome} onChange={v => set('scorersHome', v)} placeholder={`${element.teamA || 'Home'} — e.g. Neymar 12', 78'`} />
-                            <TextInput value={element.scorersAway} onChange={v => set('scorersAway', v)} placeholder={`${element.teamB || 'Away'} — e.g. Messi 45'`} />
+                            <TextArea value={element.scorersHome} onChange={v => set('scorersHome', v)} rows={2} placeholder={`${element.teamA || 'Home'} — one per line\nRonaldo 23', 45'`} />
+                            <TextArea value={element.scorersAway} onChange={v => set('scorersAway', v)} rows={2} placeholder={`${element.teamB || 'Away'} — one per line`} />
                         </div>
                     </Group>
                     <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.3)', fontFamily: 'monospace', lineHeight: 1.4 }}>
-                        Scorers are manual — the free feed has no goal data. Separate names with a comma.
+                        Scorers are manual — the free feed has no goal data. One scorer per line; put a player's multiple goals on one line: Ronaldo 23', 45'.
                     </div>
                     <Group label="Size">
                         <NumberInput value={element.fontSize ?? 30} onChange={v => set('fontSize', Math.max(14, Math.min(80, v)))} min={14} max={80} style={{ width: 52 }} />
