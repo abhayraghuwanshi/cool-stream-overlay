@@ -191,6 +191,7 @@ export const defaultElement = (type, theme = DEFAULT_THEME) => {
             teamA: 'BRA', teamB: 'ARG',
             flagA: 'br', flagB: 'ar',          // 2-letter ISO codes (flagcdn.com)
             scoreA: 0, scoreB: 0,
+            scorersHome: '', scorersAway: '',  // manual goalscorers (feed has none on free tier)
             minute: 0, status: 'LIVE', kickoff: '',   // status: SCHED | LIVE | HT | FT
             fontSize: 30,
             fontColor: T.textColor,            // team names
@@ -650,34 +651,50 @@ const MatchElement = ({ element, T }) => {
       : status === 'SCHED' ? (kickoff ? `KICKOFF ${kickoff}` : 'UPCOMING')
       : `${minute}'`;
 
-    const team = (name, flag, right) => {
+    // `home` = the left team (name outermost, flag inner, hugging the left edge);
+    // the right team mirrors it. Scorers (comma/newline separated) list under the
+    // team name on its side — manual text, the free feed has no goal events.
+    const team = (name, flag, home, scorers) => {
         const url = flagUrl(flag);
+        const lines = String(scorers || '').split(/[,\n]/).map(s => s.trim()).filter(Boolean);
         return (
             <div style={{
-                display: 'flex', alignItems: 'center', gap: 8, flex: 1, minWidth: 0,
-                // Both teams pack toward the outer edges (name outermost, flag inner);
-                // the left team reverses its row so the flag sits next to the score.
-                justifyContent: 'flex-end',
-                flexDirection: right ? 'row-reverse' : 'row',
+                display: 'flex', flexDirection: 'column', flex: 1, minWidth: 0, gap: 2,
+                alignItems: home ? 'flex-start' : 'flex-end',
             }}>
-                {url && (
-                    <img src={url} alt={name}
-                        style={{ width: flagH * 1.5, height: flagH, objectFit: 'cover', borderRadius: 2, flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
-                        onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                <div style={{
+                    display: 'flex', alignItems: 'center', gap: 8, maxWidth: '100%',
+                    flexDirection: home ? 'row-reverse' : 'row',
+                }}>
+                    {url && (
+                        <img src={url} alt={name}
+                            style={{ width: flagH * 1.5, height: flagH, objectFit: 'cover', borderRadius: 2, flexShrink: 0, boxShadow: '0 1px 3px rgba(0,0,0,0.5)' }}
+                            onError={(e) => { e.currentTarget.style.display = 'none'; }} />
+                    )}
+                    <span style={{
+                        fontSize: nameFs, color: names, fontWeight: 800, fontFamily: T.fontFamily,
+                        letterSpacing: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                        textShadow: '0 1px 4px rgba(0,0,0,0.6)',
+                    }}>{name}</span>
+                </div>
+                {lines.length > 0 && (
+                    <div style={{ display: 'flex', flexDirection: 'column', alignItems: home ? 'flex-start' : 'flex-end', lineHeight: 1.3 }}>
+                        {lines.map((l, i) => (
+                            <span key={i} style={{
+                                fontSize: Math.max(8, nameFs * 0.6), color: names, opacity: 0.72,
+                                fontFamily: T.fontFamily, whiteSpace: 'nowrap', textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                            }}>⚽ {l}</span>
+                        ))}
+                    </div>
                 )}
-                <span style={{
-                    fontSize: nameFs, color: names, fontWeight: 800, fontFamily: T.fontFamily,
-                    letterSpacing: 0.5, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
-                    textShadow: '0 1px 4px rgba(0,0,0,0.6)',
-                }}>{name}</span>
             </div>
         );
     };
 
     return (
         <div style={{ width: '100%', height: '100%', display: 'flex', flexDirection: 'column', justifyContent: 'center', padding: '8px 14px', boxSizing: 'border-box', gap: 4 }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
-                {team(teamA, flagA, true)}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+                {team(teamA, flagA, true, element.scorersHome)}
                 {/* Score + status */}
                 <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', flexShrink: 0, minWidth: fontSize * 2.4 }}>
                     <div style={{ display: 'flex', alignItems: 'baseline', gap: fontSize * 0.18, fontFamily: 'monospace', fontVariantNumeric: 'tabular-nums' }}>
@@ -694,7 +711,7 @@ const MatchElement = ({ element, T }) => {
                         {statusLabel}
                     </span>
                 </div>
-                {team(teamB, flagB, false)}
+                {team(teamB, flagB, false, element.scorersAway)}
             </div>
             {/* Match timeline — fills 0→90' */}
             {isLive && (
