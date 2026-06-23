@@ -79,10 +79,15 @@ export default function LandingPage() {
 
     useEffect(() => {
         document.title = 'Overlay Studio — custom stream overlays in your browser';
+        // The app locks body scroll (overflow:hidden) so OBS/editor never show
+        // scrollbars. The landing page is a normal tall page, so re-enable native
+        // scrolling here and restore the lock if we ever leave.
+        const prev = document.body.style.overflow;
+        document.body.style.overflow = 'auto';
         let alive = true;
         fetch(scoresUrl()).then(r => r.ok ? r.json() : null).then(d => { if (alive) setMatches(d?.matches || []); }).catch(() => { if (alive) setMatches([]); });
         fetch(`${usageUrl()}?summary=1&days=14`).then(r => r.ok ? r.json() : null).then(d => { if (alive && d) setStats(d); }).catch(() => {});
-        return () => { alive = false; };
+        return () => { alive = false; document.body.style.overflow = prev; };
     }, []);
 
     const topMatches = (matches || []).slice().sort(sortMatches).slice(0, 6);
