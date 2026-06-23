@@ -193,6 +193,18 @@ const fmtKickoff = (iso) => {
     catch { return ''; }
 };
 
+// Order matches the way a streamer wants to pick them: in-play first, then
+// upcoming (soonest kickoff first), then finished (most recent first). Without
+// this the feed's date-ascending order buries today's/live games under weeks of
+// early group games once the list is capped.
+const matchPriority = (m) => (m.status === 'LIVE' || m.status === 'HT') ? 0 : m.status === 'SCHED' ? 1 : 2;
+const matchSort = (a, b) => {
+    const pa = matchPriority(a), pb = matchPriority(b);
+    if (pa !== pb) return pa - pb;
+    const ta = +new Date(a.utcDate), tb = +new Date(b.utcDate);
+    return pa === 2 ? tb - ta : ta - tb;  // finished: newest first; live/upcoming: soonest first
+};
+
 // Relative day label for a match date — "Today" / "Tomorrow" / "Yesterday",
 // else a short date like "Jun 24".
 const fmtDay = (iso) => {
@@ -601,6 +613,8 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                             <div style={{ fontSize: 9, color: 'rgba(255,255,255,0.4)', fontFamily: 'monospace', padding: '2px 0' }}>Loading matches…</div>
                         )}
                         {matchFeed && (matchFeed.matches || [])
+                            .slice()
+                            .sort(matchSort)
                             .filter(m => {
                                 const s = matchQuery.trim().toLowerCase();
                                 return !s || m.home.name.toLowerCase().includes(s) || m.away.name.toLowerCase().includes(s) || (m.stage || '').toLowerCase().includes(s);
