@@ -659,6 +659,28 @@ const ElementEditor = ({ element, onChange, onDelete }) => {
                             <ToggleBtn active={false} onClick={() => onChange({ matchId: null })} title="Unlink and edit by hand">Detach</ToggleBtn>
                         </div>
                     )}
+                    {/* Match + team info for the linked match (free feed fields) */}
+                    {element.matchId && matchFeed && (() => {
+                        const sel = (matchFeed.matches || []).find(m => String(m.id) === String(element.matchId));
+                        if (!sel) return null;
+                        const Flag = ({ f }) => {
+                            const s = String(f || '').trim();
+                            const src = /^https?:\/\//i.test(s) ? s : (/^[a-z]{2}(-[a-z]{2,3})?$/.test(s.toLowerCase()) ? `https://flagcdn.com/w20/${s.toLowerCase()}.png` : null);
+                            return src ? <img src={src} alt="" style={{ width: 16, height: 11, objectFit: 'cover', borderRadius: 1, flexShrink: 0 }} /> : null;
+                        };
+                        const meta = [sel.stage, sel.group, sel.matchday ? `MD ${sel.matchday}` : ''].filter(Boolean).join(' · ');
+                        return (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: 6, padding: '8px 10px', borderRadius: 6, background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.08)' }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 11, color: '#fff', fontWeight: 600 }}>
+                                    <Flag f={sel.home.flag} /><span>{sel.home.full || sel.home.name}</span>
+                                    <span style={{ color: 'rgba(255,255,255,0.35)' }}>vs</span>
+                                    <span>{sel.away.full || sel.away.name}</span><Flag f={sel.away.flag} />
+                                </div>
+                                {meta && <div style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.45)', letterSpacing: 0.5 }}>{meta}</div>}
+                                {sel.referee && <div style={{ fontSize: 9, fontFamily: 'monospace', color: 'rgba(255,255,255,0.45)' }}>Referee: {sel.referee.name}{sel.referee.nationality ? ` · ${sel.referee.nationality}` : ''}</div>}
+                            </div>
+                        );
+                    })()}
                     {matchFeed && matchFeed.configured === false && (
                         <div style={{ fontSize: 9, color: 'rgba(250,204,21,0.85)', fontFamily: 'monospace', lineHeight: 1.4 }}>
                             Sample data. Set FOOTBALL_DATA_TOKEN for live World Cup matches.
